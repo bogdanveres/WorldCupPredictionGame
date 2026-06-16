@@ -18,7 +18,7 @@ service cloud.firestore {
 
     function matchHasNotStarted(matchId) {
       let m = get(/databases/$(database)/documents/matches/$(matchId));
-      return request.time < timestamp.value(m.data.scheduledKickoffUtc);
+      return m.data.status == 'SCHEDULED';
     }
 
     match /teams/{teamId} {
@@ -56,7 +56,8 @@ service cloud.firestore {
     }
 
     match /predictions/{predictionId} {
-      allow read: if isOwner(resource.data.userId) || isAdmin();
+      // predictionId format: {userId}_{matchId} — check ownership via ID, not resource.data
+      allow read: if (isAuthenticated() && predictionId.matches(request.auth.uid + '_.*')) || isAdmin();
       allow create: if isOwner(request.resource.data.userId) &&
         matchHasNotStarted(request.resource.data.matchId);
       allow update: if (isOwner(resource.data.userId) &&
