@@ -19,10 +19,18 @@ export function isBeforeKickoff(scheduledKickoffUtc: string): boolean {
   return new Date() < new Date(scheduledKickoffUtc)
 }
 
-export function romaniaDateStr(utcIso: string): string {
-  return format(toRomaniaTime(utcIso), 'yyyy-MM-dd')
+// Game day boundary: 10:00 Romania time. Matches before 10:00 belong to the previous game day.
+// e.g. kickoff 01:00 / 04:00 / 07:00 Romania → grouped under previous calendar date.
+const GAME_DAY_BOUNDARY_HOURS = 10
+
+export function romaniaGameDateStr(utcIso: string): string {
+  const romaniaMs = toRomaniaTime(utcIso).getTime()
+  const shifted = new Date(romaniaMs - GAME_DAY_BOUNDARY_HOURS * 3600_000)
+  return format(toZonedTime(shifted, ROMANIA_TZ), 'yyyy-MM-dd')
 }
 
-export function todayRomaniaDateStr(): string {
-  return format(toZonedTime(new Date(), ROMANIA_TZ), 'yyyy-MM-dd')
+export function todayRomaniaGameDateStr(): string {
+  const nowRomaniaMs = toZonedTime(new Date(), ROMANIA_TZ).getTime()
+  const shifted = new Date(nowRomaniaMs - GAME_DAY_BOUNDARY_HOURS * 3600_000)
+  return format(toZonedTime(shifted, ROMANIA_TZ), 'yyyy-MM-dd')
 }

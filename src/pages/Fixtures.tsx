@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useData } from '../contexts/DataContext'
 import MatchCard from '../components/fixtures/MatchCard'
 import type { MatchRound } from '../types'
-import { romaniaDateStr, todayRomaniaDateStr } from '../utils/timezone'
+import { romaniaGameDateStr, todayRomaniaGameDateStr } from '../utils/timezone'
 
 const GROUPS = ['A','B','C','D','E','F','G','H','I','J','K','L']
 
@@ -28,10 +28,10 @@ export default function Fixtures() {
     selectedGroup === 'ALL' || m.group === selectedGroup
   )
 
-  const today = todayRomaniaDateStr()
+  const today = todayRomaniaGameDateStr()
 
   const byDate = filtered.reduce<Record<string, typeof filtered>>((acc, m) => {
-    const day = romaniaDateStr(m.scheduledKickoffUtc)
+    const day = romaniaGameDateStr(m.scheduledKickoffUtc)
     ;(acc[day] ??= []).push(m)
     return acc
   }, {})
