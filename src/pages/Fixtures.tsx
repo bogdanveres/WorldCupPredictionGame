@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useData } from '../contexts/DataContext'
 import MatchCard from '../components/fixtures/MatchCard'
 import type { MatchRound } from '../types'
@@ -21,6 +21,7 @@ export default function Fixtures() {
   const [selectedRound, setSelectedRound] = useState<MatchRound | 'ALL'>('ALL')
   const [selectedGroup, setSelectedGroup] = useState<string>('ALL')
   const { getMatches, teamMap } = useData()
+  const todayRef = useRef<HTMLDivElement>(null)
 
   const allMatches = getMatches(selectedRound !== 'ALL' ? { round: selectedRound } : undefined)
 
@@ -37,10 +38,32 @@ export default function Fixtures() {
   }, {})
 
   const sortedDays = Object.keys(byDate).sort()
+  const hasToday = sortedDays.includes(today)
+
+  const scrollToToday = () => {
+    todayRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  // Auto-scroll to today on initial load
+  useEffect(() => {
+    if (todayRef.current) {
+      setTimeout(() => todayRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+    }
+  }, [])
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
-      <h1 className="text-2xl font-bold text-white mb-4">Fixtures</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-bold text-white">Fixtures</h1>
+        {hasToday && (
+          <button
+            onClick={scrollToToday}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold transition-colors"
+          >
+            <span>⚽</span> Today
+          </button>
+        )}
+      </div>
 
       <div className="flex flex-wrap gap-2 mb-4">
         {ROUNDS.map(r => (
@@ -91,6 +114,7 @@ export default function Fixtures() {
         return (
           <div
             key={day}
+            ref={isToday ? todayRef : undefined}
             className={`mb-6 ${isToday ? 'rounded-xl ring-2 ring-amber-500/60 bg-amber-500/5 p-4' : ''}`}
           >
             <h2 className={`text-sm font-semibold uppercase tracking-wider mb-3 flex items-center gap-2 ${isToday ? 'text-amber-400' : 'text-slate-400'}`}>
