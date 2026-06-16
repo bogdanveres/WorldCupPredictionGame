@@ -7,6 +7,7 @@ interface Props {
   homeTeam: Team | undefined
   awayTeam: Team | undefined
   showPrediction?: boolean
+  isToday?: boolean
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -17,13 +18,13 @@ const STATUS_LABEL: Record<string, string> = {
   ABANDONED: 'ABA',
 }
 
-export default function MatchCard({ match, homeTeam, awayTeam, showPrediction = true }: Props) {
+export default function MatchCard({ match, homeTeam, awayTeam, showPrediction = true, isToday = false }: Props) {
   const isFinished = match.status === 'FINISHED'
   const isLive = match.status === 'LIVE'
   const hasScore = match.homeScore !== null && match.awayScore !== null
 
   return (
-    <div className="bg-slate-800 rounded-lg p-4 flex flex-col gap-2">
+    <div className={`rounded-lg p-4 flex flex-col gap-2 ${isToday ? 'bg-slate-800 ring-1 ring-amber-500/40' : 'bg-slate-800'}`}>
       <div className="flex items-center justify-between text-xs text-slate-400">
         <span>
           {match.group ? `Group ${match.group}` : match.round.replace(/_/g, ' ')}

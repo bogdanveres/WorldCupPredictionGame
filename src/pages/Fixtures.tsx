@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useData } from '../contexts/DataContext'
 import MatchCard from '../components/fixtures/MatchCard'
 import type { MatchRound } from '../types'
+import { romaniaDateStr, todayRomaniaDateStr } from '../utils/timezone'
 
 const GROUPS = ['A','B','C','D','E','F','G','H','I','J','K','L']
 
@@ -27,8 +28,10 @@ export default function Fixtures() {
     selectedGroup === 'ALL' || m.group === selectedGroup
   )
 
+  const today = todayRomaniaDateStr()
+
   const byDate = filtered.reduce<Record<string, typeof filtered>>((acc, m) => {
-    const day = m.scheduledKickoffUtc.slice(0, 10)
+    const day = romaniaDateStr(m.scheduledKickoffUtc)
     ;(acc[day] ??= []).push(m)
     return acc
   }, {})
@@ -83,25 +86,37 @@ export default function Fixtures() {
         <p className="text-slate-400">No matches found.</p>
       )}
 
-      {sortedDays.map(day => (
-        <div key={day} className="mb-6">
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">
-            {new Date(day + 'T12:00:00Z').toLocaleDateString('en-GB', {
-              weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-            })}
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {byDate[day].map(m => (
-              <MatchCard
-                key={m.id}
-                match={m}
-                homeTeam={teamMap[m.homeTeamId]}
-                awayTeam={teamMap[m.awayTeamId]}
-              />
-            ))}
+      {sortedDays.map(day => {
+        const isToday = day === today
+        return (
+          <div
+            key={day}
+            className={`mb-6 ${isToday ? 'rounded-xl ring-2 ring-amber-500/60 bg-amber-500/5 p-4' : ''}`}
+          >
+            <h2 className={`text-sm font-semibold uppercase tracking-wider mb-3 flex items-center gap-2 ${isToday ? 'text-amber-400' : 'text-slate-400'}`}>
+              {new Date(day + 'T12:00:00Z').toLocaleDateString('en-GB', {
+                weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+              })}
+              {isToday && (
+                <span className="bg-amber-500 text-black text-xs font-bold px-2 py-0.5 rounded-full">
+                  TODAY
+                </span>
+              )}
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {byDate[day].map(m => (
+                <MatchCard
+                  key={m.id}
+                  match={m}
+                  homeTeam={teamMap[m.homeTeamId]}
+                  awayTeam={teamMap[m.awayTeamId]}
+                  isToday={isToday}
+                />
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

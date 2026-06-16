@@ -18,3 +18,11 @@ export function formatKickoffDisplay(utcIso: string): string {
 export function isBeforeKickoff(scheduledKickoffUtc: string): boolean {
   return new Date() < new Date(scheduledKickoffUtc)
 }
+
+export function romaniaDateStr(utcIso: string): string {
+  return format(toRomaniaTime(utcIso), 'yyyy-MM-dd')
+}
+
+export function todayRomaniaDateStr(): string {
+  return format(toZonedTime(new Date(), ROMANIA_TZ), 'yyyy-MM-dd')
+}
