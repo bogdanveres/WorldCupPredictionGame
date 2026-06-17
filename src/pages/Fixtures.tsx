@@ -29,7 +29,12 @@ export default function Fixtures() {
     selectedGroup === 'ALL' || m.group === selectedGroup
   )
 
-  const today = todayRomaniaGameDateStr()
+  const [today, setToday] = useState(todayRomaniaGameDateStr)
+
+  useEffect(() => {
+    const timer = setInterval(() => setToday(todayRomaniaGameDateStr()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
 
   const byDate = filtered.reduce<Record<string, typeof filtered>>((acc, m) => {
     const day = romaniaGameDateStr(m.scheduledKickoffUtc)

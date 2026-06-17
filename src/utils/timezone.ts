@@ -30,7 +30,5 @@ export function romaniaGameDateStr(utcIso: string): string {
 }
 
 export function todayRomaniaGameDateStr(): string {
-  const nowRomaniaMs = toZonedTime(new Date(), ROMANIA_TZ).getTime()
-  const shifted = new Date(nowRomaniaMs - GAME_DAY_BOUNDARY_HOURS * 3600_000)
-  return format(toZonedTime(shifted, ROMANIA_TZ), 'yyyy-MM-dd')
+  return format(toZonedTime(new Date(), ROMANIA_TZ), 'yyyy-MM-dd')
 }
