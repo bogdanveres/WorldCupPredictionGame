@@ -383,9 +383,11 @@ function TimelineTab({
   const fmtDate = (d: string) =>
     new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 
-  const ranked = [...entries].sort(
-    (a, b) => (cumulByUser[b.uid]?.at(-1) ?? 0) - (cumulByUser[a.uid]?.at(-1) ?? 0),
-  )
+  const last = (uid: string) => {
+    const a = cumulByUser[uid]
+    return a ? a[a.length - 1] ?? 0 : 0
+  }
+  const ranked = [...entries].sort((a, b) => last(b.uid) - last(a.uid))
 
   return (
     <div>
@@ -451,7 +453,7 @@ function TimelineTab({
             />
             <span className="text-slate-300">{entry.displayName?.split(' ')[0]}</span>
             <span className="text-slate-500 text-xs">
-              {cumulByUser[entry.uid]?.at(-1) ?? 0} pts
+              {last(entry.uid) ?? 0} pts
             </span>
           </div>
         ))}
