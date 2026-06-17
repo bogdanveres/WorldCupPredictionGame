@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getPrediction, upsertPrediction } from '../services/firestorePredictions'
-import { isBeforeKickoff } from '../utils/timezone'
 import type { Prediction, Match } from '../types'
 
 interface UsePredictionResult {
@@ -23,8 +22,7 @@ export function usePrediction(
 
   const canEdit =
     !!userId &&
-    match.status === 'SCHEDULED' &&
-    isBeforeKickoff(match.scheduledKickoffUtc)
+    match.status === 'SCHEDULED'
 
   useEffect(() => {
     if (!userId) return
