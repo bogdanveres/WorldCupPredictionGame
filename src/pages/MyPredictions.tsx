@@ -4,7 +4,7 @@ import { getUserPredictions } from '../services/firestorePredictions'
 import { useData } from '../contexts/DataContext'
 import MatchCard from '../components/fixtures/MatchCard'
 import type { Prediction } from '../types'
-import { formatKickoffDisplay } from '../utils/timezone'
+import { formatKickoffDisplay, isBeforeKickoff } from '../utils/timezone'
 import { Link } from 'react-router-dom'
 
 const POINTS_COLOR: Record<number, string> = {
@@ -53,8 +53,12 @@ export default function MyPredictions() {
   const predMap = Object.fromEntries(predictions.map(p => [p.matchId, p]))
   const groupMatches = matches.filter(m => m.round === 'GROUP' && m.homeTeamId !== 'TBD')
 
-  const upcomingMatches = groupMatches.filter(m => m.status === 'SCHEDULED')
-  const pastMatches = groupMatches.filter(m => m.status !== 'SCHEDULED')
+  const upcomingMatches = groupMatches.filter(
+    m => m.status !== 'LIVE' && m.status !== 'FINISHED' && m.status !== 'ABANDONED' && isBeforeKickoff(m.scheduledKickoffUtc),
+  )
+  const pastMatches = groupMatches.filter(
+    m => m.status === 'LIVE' || m.status === 'FINISHED' || m.status === 'ABANDONED' || !isBeforeKickoff(m.scheduledKickoffUtc),
+  )
 
   const totalPoints = predictions.reduce((s, p) => s + (p.pointsAwarded ?? 0), 0)
   const exactScores = predictions.filter(p => p.pointsAwarded === 5 || p.pointsAwarded === 2).length
