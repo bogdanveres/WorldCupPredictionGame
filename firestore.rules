@@ -47,7 +47,7 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if isAuthenticated();
       allow create: if isOwner(userId);
       allow update: if (isOwner(userId) &&
         !request.resource.data.diff(resource.data).affectedKeys()
@@ -56,8 +56,8 @@ service cloud.firestore {
     }
 
     match /predictions/{predictionId} {
-      // predictionId format: {userId}_{matchId} — check ownership via ID, not resource.data
-      allow read: if (isAuthenticated() && predictionId.matches(request.auth.uid + '_.*')) || isAdmin();
+      // predictionId format: {userId}_{matchId}
+      allow read: if isAuthenticated();
       allow create: if isOwner(request.resource.data.userId) &&
         matchHasNotStarted(request.resource.data.matchId);
       allow update: if (isOwner(resource.data.userId) &&
