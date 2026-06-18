@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './components/auth/AuthProvider'
 import { DataProvider } from './contexts/DataContext'
 import Navbar from './components/ui/Navbar'
+import ScrollToTop from './components/ui/ScrollToTop'
 import Home from './pages/Home'
 import Fixtures from './pages/Fixtures'
 import MyPredictions from './pages/MyPredictions'
@@ -17,6 +18,7 @@ export default function App() {
       <DataProvider>
         <div className="flex flex-col min-h-dvh">
           <Navbar />
+          <ScrollToTop />
           <main className="flex-1">
             <Routes>
               <Route path="/" element={<Home />} />
