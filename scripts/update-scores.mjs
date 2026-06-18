@@ -75,10 +75,40 @@ function calcPoints(pred, match) {
   return 0
 }
 
-// ─── Fetch today's fixtures from API-Football ─────────────────────────────
+const now  = Date.now()
 const today = new Date().toISOString().slice(0, 10)
 console.log(`\n=== update-scores ${today} ===`)
 
+// ─── Pre-flight: load matches and check if any are active ─────────────────
+// A match is active if it is LIVE, or its kickoff is within [-5min, +150min].
+// 150 min covers 90 min game + halftime + extra time + penalties + buffer.
+// This avoids spending API credits when no matches are in progress.
+const BEFORE_MS = 5   * 60 * 1000
+const AFTER_MS  = 150 * 60 * 1000
+
+const [matchSnap, teamSnap] = await Promise.all([
+  db.collection('matches').get(),
+  db.collection('teams').get(),
+])
+
+const teamNameById = Object.fromEntries(teamSnap.docs.map(d => [d.id, d.data().name]))
+const fsMatches    = matchSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+
+const activeMatches = fsMatches.filter(m => {
+  if (m.status === 'LIVE') return true
+  if (m.status !== 'SCHEDULED' || !m.scheduledKickoffUtc) return false
+  const kickoff = new Date(m.scheduledKickoffUtc).getTime()
+  return now >= kickoff - BEFORE_MS && now <= kickoff + AFTER_MS
+})
+
+if (activeMatches.length === 0) {
+  console.log('No active matches — skipping API call.')
+  process.exit(0)
+}
+
+console.log(`Active matches: ${activeMatches.map(m => m.id).join(', ')}`)
+
+// ─── Fetch today's fixtures from API-Football ─────────────────────────────
 const apiRes = await fetch(
   `https://v3.football.api-sports.io/fixtures?league=1&season=2026&date=${today}`,
   { headers: { 'x-apisports-key': API_KEY } }
@@ -94,18 +124,9 @@ const apiFix = (await apiRes.json()).response ?? []
 console.log(`API-Football: ${apiFix.length} fixtures today | ${remaining} requests remaining`)
 
 if (apiFix.length === 0) {
-  console.log('No fixtures today.')
+  console.log('No fixtures from API today.')
   process.exit(0)
 }
-
-// ─── Load Firestore data ───────────────────────────────────────────────────
-const [matchSnap, teamSnap] = await Promise.all([
-  db.collection('matches').get(),
-  db.collection('teams').get(),
-])
-
-const teamNameById = Object.fromEntries(teamSnap.docs.map(d => [d.id, d.data().name]))
-const fsMatches    = matchSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
 // Index by kickoff minute (YYYY-MM-DDTHH:MM)
 const byKickoff = Object.fromEntries(
@@ -113,8 +134,8 @@ const byKickoff = Object.fromEntries(
 )
 
 // ─── Match API fixtures → Firestore matches ────────────────────────────────
-const updates      = []
-const newlyDone    = []
+const updates   = []
+const newlyDone = []
 
 for (const fix of apiFix) {
   const apiKey = new Date(fix.fixture.date).toISOString().slice(0, 16)
@@ -185,9 +206,9 @@ const [finSnap, predSnap, userSnap] = await Promise.all([
   db.collection('users').get(),
 ])
 
-const finMap    = Object.fromEntries(finSnap.docs.map(d => [d.id, d.data()]))
-const userInfo  = Object.fromEntries(userSnap.docs.map(d => [d.id, d.data()]))
-const preds     = predSnap.docs.map(d => d.data())
+const finMap   = Object.fromEntries(finSnap.docs.map(d => [d.id, d.data()]))
+const userInfo = Object.fromEntries(userSnap.docs.map(d => [d.id, d.data()]))
+const preds    = predSnap.docs.map(d => d.data())
 
 const statsClean = {}
 const pointRows  = []
@@ -222,7 +243,7 @@ const sorted = Object.entries(statsClean).sort(([, a], [, b]) => {
   return b.correctOutcomeCount - a.correctOutcomeCount
 })
 
-const now = new Date().toISOString()
+const nowIso = new Date().toISOString()
 const lbBatch = db.batch()
 let rank = 1
 for (const [uid, s] of sorted) {
@@ -230,7 +251,7 @@ for (const [uid, s] of sorted) {
     uid,
     displayName: userInfo[uid]?.displayName ?? uid,
     photoURL:    userInfo[uid]?.photoURL    ?? null,
-    rank, lastCalculated: now, ...s,
+    rank, lastCalculated: nowIso, ...s,
   })
   lbBatch.update(db.collection('users').doc(uid), {
     totalPoints:          s.totalPoints,
