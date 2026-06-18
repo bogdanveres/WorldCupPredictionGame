@@ -1,0 +1,29 @@
+name: Update Scores
+
+on:
+  schedule:
+    - cron: '*/20 * * * *'   # every 20 min = 72 calls/day, within 100 free API limit
+  workflow_dispatch:           # allow manual trigger from GitHub UI
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install script dependencies
+        run: npm install
+        working-directory: scripts
+
+      - name: Fetch scores and update Firestore
+        env:
+          API_FOOTBALL_KEY:       ${{ secrets.API_FOOTBALL_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node update-scores.mjs
+        working-directory: scripts
