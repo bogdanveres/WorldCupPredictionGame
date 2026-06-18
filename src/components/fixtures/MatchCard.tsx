@@ -46,7 +46,7 @@ export default function MatchCard({ match, homeTeam, awayTeam, showPrediction = 
 
         <div className="flex flex-col items-center min-w-[64px]">
           {hasScore ? (
-            <div className="text-2xl font-bold text-white tracking-wider">
+            <div className={`text-2xl font-bold tracking-wider ${isLive ? 'text-green-400' : 'text-white'}`}>
               {match.homeScore} – {match.awayScore}
             </div>
           ) : (
@@ -56,10 +56,7 @@ export default function MatchCard({ match, homeTeam, awayTeam, showPrediction = 
                 : STATUS_LABEL[match.status] ?? match.status}
             </div>
           )}
-          {match.status === 'SCHEDULED' && (
-            <div className="text-xs text-slate-500 mt-0.5">{match.city}</div>
-          )}
-          {isFinished && (
+          {(match.status === 'SCHEDULED' || isLive || isFinished) && (
             <div className="text-xs text-slate-500 mt-0.5">{match.city}</div>
           )}
         </div>

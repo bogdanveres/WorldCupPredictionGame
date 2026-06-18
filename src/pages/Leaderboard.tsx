@@ -65,7 +65,13 @@ export default function Leaderboard() {
         ))}
       </div>
 
-      {tab === 'overall' && <OverallTab entries={entries} loading={entriesLoading} />}
+      {tab === 'overall' && (
+        <OverallTab
+          entries={entries}
+          loading={entriesLoading}
+          hasLive={matches.some(m => m.status === 'LIVE')}
+        />
+      )}
       {tab === 'weekly' && (
         <WeeklyTab scoredPreds={scoredPreds} matches={matches} entries={entries} colorMap={colorMap} />
       )}
@@ -78,7 +84,7 @@ export default function Leaderboard() {
 
 // ─── Overall ────────────────────────────────────────────────────────────────
 
-function OverallTab({ entries, loading }: { entries: LeaderboardEntry[]; loading: boolean }) {
+function OverallTab({ entries, loading, hasLive }: { entries: LeaderboardEntry[]; loading: boolean; hasLive: boolean }) {
   const [sortKey, setSortKey] = useState<SortKey>('totalPoints')
 
   const sorted = [...entries].sort((a, b) => {
@@ -119,7 +125,9 @@ function OverallTab({ entries, loading }: { entries: LeaderboardEntry[]; loading
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
           <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
         </span>
-        <span className="text-xs text-slate-500">Live</span>
+        <span className="text-xs text-slate-500">
+          {hasLive ? 'Live · includes in-progress match scores' : 'Live'}
+        </span>
       </div>
 
       <div className="bg-slate-800 rounded-lg overflow-hidden">

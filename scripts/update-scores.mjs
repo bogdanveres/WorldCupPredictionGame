@@ -75,7 +75,7 @@ function calcPoints(pred, match) {
   return 0
 }
 
-const now  = Date.now()
+const nowMs = Date.now()
 const today = new Date().toISOString().slice(0, 10)
 console.log(`\n=== update-scores ${today} ===`)
 
@@ -98,7 +98,7 @@ const activeMatches = fsMatches.filter(m => {
   if (m.status === 'LIVE') return true
   if (m.status !== 'SCHEDULED' || !m.scheduledKickoffUtc) return false
   const kickoff = new Date(m.scheduledKickoffUtc).getTime()
-  return now >= kickoff - BEFORE_MS && now <= kickoff + AFTER_MS
+  return nowMs >= kickoff - BEFORE_MS && nowMs <= kickoff + AFTER_MS
 })
 
 if (activeMatches.length === 0) {
@@ -134,8 +134,7 @@ const byKickoff = Object.fromEntries(
 )
 
 // ─── Match API fixtures → Firestore matches ────────────────────────────────
-const updates   = []
-const newlyDone = []
+const updates = []
 
 for (const fix of apiFix) {
   const apiKey = new Date(fix.fixture.date).toISOString().slice(0, 16)
@@ -172,10 +171,6 @@ for (const fix of apiFix) {
   console.log(`  ${fsMatch.id} ${fix.teams.home.name} ${newHome ?? '?'}-${newAway ?? '?'} ${fix.teams.away.name} [${newStatus}]`)
 
   updates.push({ id: fsMatch.id, status: newStatus, homeScore: newHome, awayScore: newAway, winnerTeamId: winnerId, lastUpdated: new Date().toISOString() })
-
-  if (fsMatch.status !== 'FINISHED' && newStatus === 'FINISHED') {
-    newlyDone.push({ ...fsMatch, status: newStatus, homeScore: newHome, awayScore: newAway, winnerTeamId: winnerId })
-  }
 }
 
 if (updates.length === 0) {
@@ -192,32 +187,31 @@ for (const u of updates) {
 await matchBatch.commit()
 console.log(`Wrote ${updates.length} match update(s).`)
 
-if (newlyDone.length === 0) {
-  console.log('No newly finished matches — skipping leaderboard recalc.')
-  process.exit(0)
-}
-
 // ─── Recalculate leaderboard ───────────────────────────────────────────────
-console.log(`${newlyDone.length} newly finished — recalculating leaderboard...`)
+// Runs on every score change. LIVE match points are provisional; FINISHED are final.
+console.log('Recalculating leaderboard...')
 
-const [finSnap, predSnap, userSnap] = await Promise.all([
+const [finSnap, liveSnap, predSnap, userSnap] = await Promise.all([
   db.collection('matches').where('status', '==', 'FINISHED').get(),
+  db.collection('matches').where('status', '==', 'LIVE').get(),
   db.collection('predictions').get(),
   db.collection('users').get(),
 ])
 
-const finMap   = Object.fromEntries(finSnap.docs.map(d => [d.id, d.data()]))
-const userInfo = Object.fromEntries(userSnap.docs.map(d => [d.id, d.data()]))
-const preds    = predSnap.docs.map(d => d.data())
+const finMap       = Object.fromEntries(finSnap.docs.map(d => [d.id, d.data()]))
+const liveMap      = Object.fromEntries(liveSnap.docs.map(d => [d.id, d.data()]))
+const scoreableMap = { ...finMap, ...liveMap }  // FINISHED (final) + LIVE (provisional)
+const userInfo     = Object.fromEntries(userSnap.docs.map(d => [d.id, d.data()]))
+const preds        = predSnap.docs.map(d => d.data())
 
 const statsClean = {}
-const pointRows  = []
+const pointRows  = []  // only FINISHED — written back to prediction docs
 
 for (const pred of preds) {
-  const match = finMap[pred.matchId]
+  const match = scoreableMap[pred.matchId]
   if (!match) continue
   const pts = calcPoints(pred, match)
-  pointRows.push({ id: pred.id, pts })
+  if (finMap[pred.matchId]) pointRows.push({ id: pred.id, pts })
   if (!statsClean[pred.userId]) statsClean[pred.userId] = { totalPoints: 0, exactScoreCount: 0, correctOutcomeCount: 0, correctDrawCount: 0, predictionsSubmitted: 0 }
   const s = statsClean[pred.userId]
   s.totalPoints   += pts
@@ -227,7 +221,7 @@ for (const pred of preds) {
   if (pts === 1 || pts === 2) s.correctDrawCount++
 }
 
-// Write prediction pointsAwarded in batches of 400
+// Write pointsAwarded only for FINISHED predictions (final scores), in batches of 400
 for (let i = 0; i < pointRows.length; i += 400) {
   const b = db.batch()
   for (const { id, pts } of pointRows.slice(i, i + 400)) {
@@ -263,4 +257,5 @@ for (const [uid, s] of sorted) {
   rank++
 }
 await lbBatch.commit()
-console.log(`Leaderboard updated — ${sorted.length} users, ${pointRows.length} predictions scored.`)
+const liveCount = liveSnap.size
+console.log(`Leaderboard updated — ${sorted.length} users, ${pointRows.length} predictions scored${liveCount > 0 ? ` (+${liveCount} live match${liveCount > 1 ? 'es' : ''} provisional)` : ''}.`)

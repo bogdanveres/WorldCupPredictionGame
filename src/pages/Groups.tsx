@@ -4,7 +4,9 @@ import type { GroupStanding, Match } from '../types'
 const GROUPS = ['A','B','C','D','E','F','G','H','I','J','K','L']
 
 function calcStandings(matches: Match[], group: string): GroupStanding[] {
-  const relevant = matches.filter(m => m.round === 'GROUP' && m.group === group && m.status === 'FINISHED')
+  const relevant = matches.filter(
+    m => m.round === 'GROUP' && m.group === group && (m.status === 'FINISHED' || m.status === 'LIVE'),
+  )
   const map = new Map<string, GroupStanding>()
 
   const ensure = (teamId: string) => {
@@ -53,10 +55,17 @@ export default function Groups() {
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {GROUPS.map(g => {
           const standings = calcStandings(matches, g)
+          const hasLive = matches.some(m => m.round === 'GROUP' && m.group === g && m.status === 'LIVE')
           return (
             <div key={g} className="bg-slate-800 rounded-lg overflow-hidden">
-              <div className="bg-slate-700 px-4 py-2 font-bold text-white text-sm">
-                Group {g}
+              <div className="bg-slate-700 px-4 py-2 font-bold text-white text-sm flex items-center justify-between">
+                <span>Group {g}</span>
+                {hasLive && (
+                  <span className="flex items-center gap-1 text-green-400 text-xs font-semibold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
+                    LIVE
+                  </span>
+                )}
               </div>
               <table className="w-full text-xs">
                 <thead>
