@@ -1,64 +1,37 @@
 import { initializeApp, cert } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
 
-const API_KEY = process.env.API_FOOTBALL_KEY
-const SA     = process.env.FIREBASE_SERVICE_ACCOUNT
+const SA = process.env.FIREBASE_SERVICE_ACCOUNT
 
-if (!API_KEY || !SA) {
-  console.log('Missing API_FOOTBALL_KEY or FIREBASE_SERVICE_ACCOUNT — skipping.')
+if (!SA) {
+  console.log('Missing FIREBASE_SERVICE_ACCOUNT — skipping.')
   process.exit(0)
 }
 
 initializeApp({ credential: cert(JSON.parse(SA)) })
 const db = getFirestore()
 
-// ─── Team name normalisation ───────────────────────────────────────────────
-// API-Football uses different names for some national teams.
-const ALIASES = {
-  'korea republic':              'KOR',
-  'south korea':                 'KOR',
-  'czechia':                     'CZE',
-  'czech republic':              'CZE',
-  "cote d'ivoire":               'CIV',
-  'ivory coast':                 'CIV',
-  'cabo verde':                  'CPV',
-  'cape verde':                  'CPV',
-  'curacao':                     'CUW',
-  'saudi arabia':                'KSA',
-  'new zealand':                 'NZL',
-  'dr congo':                    'COD',
-  'democratic republic of congo':'COD',
-  'united states':               'USA',
-  'bosnia & herzegovina':        'BIH',
-  'bosnia and herzegovina':      'BIH',
-  'netherlands':                 'NED',
-  'holland':                     'NED',
+// ─── ESPN abbreviation → our team ID (only where they differ) ────────────
+const ESPN_TO_ID = {
+  'sau': 'KSA',  // Saudi Arabia
+  'cgo': 'COD',  // DR Congo
+  'drc': 'COD',  // DR Congo (alt)
+  'ivc': 'CIV',  // Ivory Coast
+  'cvd': 'CPV',  // Cape Verde (alt)
 }
 
-function norm(name) {
-  return name
-    .toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function resolveTeamId(apiName, teamNameById) {
-  const n = norm(apiName)
-  if (ALIASES[n]) return ALIASES[n]
-  for (const [id, name] of Object.entries(teamNameById)) {
-    if (norm(name) === n) return id
-  }
-  return null
+function espnToId(abbr) {
+  const lower = abbr.toLowerCase()
+  return ESPN_TO_ID[lower] ?? abbr.toUpperCase()
 }
 
 // ─── Status mapping ────────────────────────────────────────────────────────
-function mapStatus(short) {
-  if (['1H','HT','2H','ET','BT','P','SUSP','INT'].includes(short)) return 'LIVE'
-  if (['FT','AET','PEN'].includes(short))                           return 'FINISHED'
-  if (short === 'PST')                                              return 'POSTPONED'
-  if (['CANC','ABD','AWD','WO'].includes(short))                    return 'ABANDONED'
+function mapEspnStatus(statusType) {
+  const state     = statusType?.state      // 'pre' | 'in' | 'post'
+  const completed = statusType?.completed  // boolean
+  if (state === 'in')                 return 'LIVE'
+  if (state === 'post' && completed)  return 'FINISHED'
+  if (state === 'post' && !completed) return 'POSTPONED'
   return 'SCHEDULED'
 }
 
@@ -79,26 +52,27 @@ const nowMs = Date.now()
 const today = new Date().toISOString().slice(0, 10)
 console.log(`\n=== update-scores ${today} ===`)
 
-// ─── Pre-flight: load matches and check if any are active ─────────────────
-// A match is active if it is LIVE, or its kickoff is within [-5min, +150min].
-// 150 min covers 90 min game + halftime + extra time + penalties + buffer.
-// This avoids spending API credits when no matches are in progress.
-const BEFORE_MS = 5   * 60 * 1000
-const AFTER_MS  = 150 * 60 * 1000
+// ─── Pre-flight: load Firestore matches, find active or missed ones ────────
+// Active  = LIVE, or SCHEDULED within [-5min, +150min] of kickoff.
+// Missed  = SCHEDULED but kickoff was up to 24h ago (API was down / wrong provider).
+// 150 min covers 90 min + halftime + ET + penalties + buffer.
+const BEFORE_MS   = 5   * 60 * 1000        //  5 min before kickoff
+const AFTER_MS    = 150 * 60 * 1000        // 150 min after kickoff
+const CATCH_UP_MS = 24  * 60 * 60 * 1000  //  24 h catch-up for missed windows
 
 const [matchSnap, teamSnap] = await Promise.all([
   db.collection('matches').get(),
   db.collection('teams').get(),
 ])
 
-const teamNameById = Object.fromEntries(teamSnap.docs.map(d => [d.id, d.data().name]))
-const fsMatches    = matchSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+const fsMatches = matchSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
 const activeMatches = fsMatches.filter(m => {
   if (m.status === 'LIVE') return true
   if (m.status !== 'SCHEDULED' || !m.scheduledKickoffUtc) return false
   const kickoff = new Date(m.scheduledKickoffUtc).getTime()
-  return nowMs >= kickoff - BEFORE_MS && nowMs <= kickoff + AFTER_MS
+  // Normal window OR catch-up for missed games
+  return nowMs >= kickoff - BEFORE_MS && nowMs <= kickoff + AFTER_MS + CATCH_UP_MS
 })
 
 if (activeMatches.length === 0) {
@@ -106,54 +80,75 @@ if (activeMatches.length === 0) {
   process.exit(0)
 }
 
-console.log(`Active matches: ${activeMatches.map(m => m.id).join(', ')}`)
+// Gather unique dates to query ESPN (may span two UTC days)
+const activeDates = [...new Set(activeMatches.map(m => m.scheduledKickoffUtc.slice(0, 10)))].sort()
+console.log(`Active/missed: ${activeMatches.map(m => m.id).join(', ')} (dates: ${activeDates.join(', ')})`)
 
-// ─── Fetch today's fixtures from API-Football ─────────────────────────────
-const apiRes = await fetch(
-  `https://v3.football.api-sports.io/fixtures?league=1&season=2026&date=${today}`,
-  { headers: { 'x-apisports-key': API_KEY } }
-)
-
-if (!apiRes.ok) {
-  console.error(`API-Football error: ${apiRes.status} ${await apiRes.text()}`)
-  process.exit(1)
+// ─── Fetch from ESPN (free, no API key) ───────────────────────────────────
+const allEvents = []
+for (const date of activeDates) {
+  const espnRes = await fetch(
+    `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${date.replace(/-/g, '')}`,
+    { headers: { 'User-Agent': 'Mozilla/5.0' } }
+  )
+  if (!espnRes.ok) {
+    console.error(`ESPN error for ${date}: ${espnRes.status}`)
+    continue
+  }
+  const events = (await espnRes.json()).events ?? []
+  console.log(`ESPN ${date}: ${events.length} event(s)`)
+  allEvents.push(...events)
 }
 
-const remaining = apiRes.headers.get('x-ratelimit-requests-remaining')
-const apiFix = (await apiRes.json()).response ?? []
-console.log(`API-Football: ${apiFix.length} fixtures today | ${remaining} requests remaining`)
-
-if (apiFix.length === 0) {
-  console.log('No fixtures from API today.')
+if (allEvents.length === 0) {
+  console.log('No events from ESPN.')
   process.exit(0)
 }
 
-// Index by kickoff minute (YYYY-MM-DDTHH:MM)
+// Index Firestore matches by kickoff minute (YYYY-MM-DDTHH:MM)
 const byKickoff = Object.fromEntries(
   fsMatches.map(m => [m.scheduledKickoffUtc?.slice(0, 16), m])
 )
 
-// ─── Match API fixtures → Firestore matches ────────────────────────────────
+// ─── Match ESPN events → Firestore matches ─────────────────────────────────
 const updates = []
 
-for (const fix of apiFix) {
-  const apiKey = new Date(fix.fixture.date).toISOString().slice(0, 16)
-  let fsMatch  = byKickoff[apiKey]
+for (const event of allEvents) {
+  const comp = event.competitions?.[0]
+  if (!comp) continue
 
+  const homeComp = comp.competitors?.find(c => c.homeAway === 'home')
+  const awayComp = comp.competitors?.find(c => c.homeAway === 'away')
+  if (!homeComp || !awayComp) continue
+
+  const hId = espnToId(homeComp.team.abbreviation)
+  const aId = espnToId(awayComp.team.abbreviation)
+
+  // Primary: match by UTC kickoff timestamp
+  const kickoffKey = event.date?.slice(0, 16)
+  let fsMatch = byKickoff[kickoffKey]
+
+  // Fallback: match by team IDs
   if (!fsMatch) {
-    const hId = resolveTeamId(fix.teams.home.name, teamNameById)
-    const aId = resolveTeamId(fix.teams.away.name, teamNameById)
-    if (hId && aId) fsMatch = fsMatches.find(m => m.homeTeamId === hId && m.awayTeamId === aId)
+    fsMatch = fsMatches.find(m => m.homeTeamId === hId && m.awayTeamId === aId)
   }
 
   if (!fsMatch) {
-    console.log(`  ⚠ unmatched: ${fix.teams.home.name} vs ${fix.teams.away.name} @ ${apiKey}`)
+    console.log(`  ⚠ unmatched: ${homeComp.team.abbreviation} vs ${awayComp.team.abbreviation} @ ${kickoffKey}`)
     continue
   }
 
-  const newStatus = mapStatus(fix.fixture.status.short)
-  const newHome   = fix.goals.home   ?? null
-  const newAway   = fix.goals.away   ?? null
+  const statusType = comp.status?.type
+  const newStatus  = mapEspnStatus(statusType)
+
+  // Don't apply scores for pre-match events (ESPN sends "0" before kickoff)
+  const parseScore = s => {
+    if (newStatus === 'SCHEDULED') return null
+    const n = parseInt(s, 10)
+    return isNaN(n) ? null : n
+  }
+  const newHome = parseScore(homeComp.score)
+  const newAway = parseScore(awayComp.score)
 
   const changed =
     fsMatch.status    !== newStatus ||
@@ -168,9 +163,16 @@ for (const fix of apiFix) {
     else if (newAway > newHome) winnerId = fsMatch.awayTeamId
   }
 
-  console.log(`  ${fsMatch.id} ${fix.teams.home.name} ${newHome ?? '?'}-${newAway ?? '?'} ${fix.teams.away.name} [${newStatus}]`)
+  console.log(`  ${fsMatch.id} ${hId} ${newHome ?? '?'}-${newAway ?? '?'} ${aId} [${newStatus}]`)
 
-  updates.push({ id: fsMatch.id, status: newStatus, homeScore: newHome, awayScore: newAway, winnerTeamId: winnerId, lastUpdated: new Date().toISOString() })
+  updates.push({
+    id: fsMatch.id,
+    status: newStatus,
+    homeScore: newHome,
+    awayScore: newAway,
+    winnerTeamId: winnerId,
+    lastUpdated: new Date().toISOString(),
+  })
 }
 
 if (updates.length === 0) {
@@ -200,7 +202,7 @@ const [finSnap, liveSnap, predSnap, userSnap] = await Promise.all([
 
 const finMap       = Object.fromEntries(finSnap.docs.map(d => [d.id, d.data()]))
 const liveMap      = Object.fromEntries(liveSnap.docs.map(d => [d.id, d.data()]))
-const scoreableMap = { ...finMap, ...liveMap }  // FINISHED (final) + LIVE (provisional)
+const scoreableMap = { ...finMap, ...liveMap }
 const userInfo     = Object.fromEntries(userSnap.docs.map(d => [d.id, d.data()]))
 const preds        = predSnap.docs.map(d => d.data())
 
@@ -221,7 +223,7 @@ for (const pred of preds) {
   if (pts === 1 || pts === 2) s.correctDrawCount++
 }
 
-// Write pointsAwarded only for FINISHED predictions (final scores), in batches of 400
+// Write pointsAwarded only for FINISHED predictions, in batches of 400
 for (let i = 0; i < pointRows.length; i += 400) {
   const b = db.batch()
   for (const { id, pts } of pointRows.slice(i, i + 400)) {
@@ -237,7 +239,7 @@ const sorted = Object.entries(statsClean).sort(([, a], [, b]) => {
   return b.correctOutcomeCount - a.correctOutcomeCount
 })
 
-const nowIso = new Date().toISOString()
+const nowIso  = new Date().toISOString()
 const lbBatch = db.batch()
 let rank = 1
 for (const [uid, s] of sorted) {

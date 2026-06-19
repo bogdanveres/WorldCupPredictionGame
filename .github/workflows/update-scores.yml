@@ -23,7 +23,6 @@ jobs:
 
       - name: Fetch scores and update Firestore
         env:
-          API_FOOTBALL_KEY:       ${{ secrets.API_FOOTBALL_KEY }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node update-scores.mjs
         working-directory: scripts
