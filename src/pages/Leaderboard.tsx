@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
-import { collection, getDocs, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot, orderBy, query, where } from 'firebase/firestore'
 import { getISOWeek, parseISO } from 'date-fns'
 import { db } from '../services/firebase'
 import { useData } from '../contexts/DataContext'
-import type { LeaderboardEntry, Match, Prediction } from '../types'
+import type { LeaderboardEntry, Match, Prediction, Team } from '../types'
 
 type Tab = 'overall' | 'weekly' | 'timeline'
 type SortKey = 'totalPoints' | 'exactScoreCount' | 'correctOutcomeCount' | 'predictionsSubmitted'
@@ -15,7 +15,8 @@ export default function Leaderboard() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([])
   const [entriesLoading, setEntriesLoading] = useState(true)
   const [scoredPreds, setScoredPreds] = useState<Prediction[] | null>(null)
-  const { matches } = useData()
+  const [selectedUser, setSelectedUser] = useState<LeaderboardEntry | null>(null)
+  const { matches, teamMap } = useData()
 
   useEffect(() => {
     const q = query(collection(db, 'leaderboard'), orderBy('totalPoints', 'desc'))
@@ -70,6 +71,16 @@ export default function Leaderboard() {
           entries={entries}
           loading={entriesLoading}
           hasLive={matches.some(m => m.status === 'LIVE')}
+          onSelect={setSelectedUser}
+        />
+      )}
+
+      {selectedUser && (
+        <UserPredictionsModal
+          user={selectedUser}
+          matches={matches}
+          teamMap={teamMap}
+          onClose={() => setSelectedUser(null)}
         />
       )}
       {tab === 'weekly' && (
@@ -84,7 +95,17 @@ export default function Leaderboard() {
 
 // ─── Overall ────────────────────────────────────────────────────────────────
 
-function OverallTab({ entries, loading, hasLive }: { entries: LeaderboardEntry[]; loading: boolean; hasLive: boolean }) {
+function OverallTab({
+  entries,
+  loading,
+  hasLive,
+  onSelect,
+}: {
+  entries: LeaderboardEntry[]
+  loading: boolean
+  hasLive: boolean
+  onSelect: (entry: LeaderboardEntry) => void
+}) {
   const [sortKey, setSortKey] = useState<SortKey>('totalPoints')
 
   const sorted = [...entries].sort((a, b) => {
@@ -154,7 +175,8 @@ function OverallTab({ entries, loading, hasLive }: { entries: LeaderboardEntry[]
             {sorted.map((entry, i) => (
               <tr
                 key={entry.uid}
-                className={`border-b border-slate-700/50 ${
+                onClick={() => onSelect(entry)}
+                className={`border-b border-slate-700/50 cursor-pointer hover:bg-slate-700/40 transition-colors ${
                   i === 0 ? 'bg-yellow-900/10' : i === 1 ? 'bg-slate-700/20' : i === 2 ? 'bg-orange-900/10' : ''
                 }`}
               >
@@ -465,6 +487,152 @@ function TimelineTab({
             </span>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── User Predictions Modal ──────────────────────────────────────────────────
+
+function UserPredictionsModal({
+  user,
+  matches,
+  teamMap,
+  onClose,
+}: {
+  user: LeaderboardEntry
+  matches: Match[]
+  teamMap: Record<string, Team>
+  onClose: () => void
+}) {
+  const [preds, setPreds] = useState<Prediction[] | null>(null)
+
+  useEffect(() => {
+    getDocs(query(collection(db, 'predictions'), where('userId', '==', user.uid))).then(snap => {
+      setPreds(snap.docs.map(d => d.data() as Prediction))
+    })
+  }, [user.uid])
+
+  // Lock body scroll while modal is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = '' }
+  }, [])
+
+  // Close on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const rows = useMemo(() => {
+    if (!preds) return []
+    const matchMap = Object.fromEntries(matches.map(m => [m.id, m]))
+    return preds
+      .map(p => ({ pred: p, match: matchMap[p.matchId] }))
+      .filter(r => r.match?.status === 'FINISHED')
+      .sort((a, b) => a.match.scheduledKickoffUtc.localeCompare(b.match.scheduledKickoffUtc))
+  }, [preds, matches])
+
+  const ptsBadge = (pts: number | null) => {
+    if (pts === 5 || pts === 2) return { label: `${pts}pts`, cls: 'text-green-300 bg-green-900/50' }
+    if (pts === 3)              return { label: '3pts',      cls: 'text-blue-300 bg-blue-900/50' }
+    if (pts === 1)              return { label: '1pt',       cls: 'text-sky-300 bg-sky-900/50' }
+    if (pts === 0)              return { label: '0pts',      cls: 'text-slate-500 bg-slate-700/50' }
+    return null
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/70" />
+
+      <div
+        className="relative bg-slate-900 rounded-t-2xl sm:rounded-xl shadow-2xl w-full sm:max-w-lg max-h-[90vh] sm:max-h-[85vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-3 px-4 py-4 border-b border-slate-700 shrink-0">
+          {user.photoURL ? (
+            <img src={user.photoURL} alt="" className="w-10 h-10 rounded-full shrink-0" />
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center text-white font-semibold shrink-0">
+              {user.displayName?.[0]}
+            </div>
+          )}
+          <div className="min-w-0">
+            <div className="text-white font-bold truncate">{user.displayName}</div>
+            <div className="text-slate-400 text-xs">
+              {user.totalPoints} pts · {user.exactScoreCount} exact · {user.correctOutcomeCount} correct
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="ml-auto shrink-0 text-slate-400 hover:text-white transition-colors p-1 touch-manipulation"
+            aria-label="Close"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+              <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1">
+          {preds === null ? (
+            <div className="space-y-2 p-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="h-14 rounded-lg bg-slate-800 animate-pulse" />
+              ))}
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="py-14 text-center text-slate-400 text-sm">
+              No predictions for finished matches yet.
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-700/40">
+              {rows.map(({ pred, match }) => {
+                const home  = teamMap[match.homeTeamId]
+                const away  = teamMap[match.awayTeamId]
+                const badge = ptsBadge(pred.pointsAwarded)
+                const label = match.group ? `Group ${match.group}` : match.round.replace(/_/g, ' ')
+                const exact = pred.predictedHomeScore === match.homeScore && pred.predictedAwayScore === match.awayScore
+
+                return (
+                  <div key={pred.id} className="flex items-center gap-3 px-4 py-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 text-sm font-medium text-white">
+                        <span className="text-base leading-none">{home?.flagEmoji ?? '🏳'}</span>
+                        <span className="truncate max-w-[4rem]">{home?.shortName ?? match.homeTeamId}</span>
+                        <span className="text-slate-300 font-bold tabular-nums">{match.homeScore}–{match.awayScore}</span>
+                        <span className="truncate max-w-[4rem]">{away?.shortName ?? match.awayTeamId}</span>
+                        <span className="text-base leading-none">{away?.flagEmoji ?? '🏳'}</span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
+                        <span>{label}</span>
+                        <span>·</span>
+                        <span>Predicted: <span className="text-slate-300 tabular-nums">{pred.predictedHomeScore}–{pred.predictedAwayScore}</span></span>
+                        {exact && <span className="text-green-400 font-medium">✓ exact</span>}
+                      </div>
+                    </div>
+                    {badge && (
+                      <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full ${badge.cls}`}>
+                        {badge.label}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {preds !== null && rows.length > 0 && (
+          <div className="shrink-0 border-t border-slate-700 px-4 py-2.5 text-xs text-slate-500 text-center">
+            {rows.length} prediction{rows.length !== 1 ? 's' : ''} · tap outside to close
+          </div>
+        )}
       </div>
     </div>
   )
