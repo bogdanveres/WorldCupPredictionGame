@@ -9,6 +9,7 @@ import MyPredictions from './pages/MyPredictions'
 import Groups from './pages/Groups'
 import Leaderboard from './pages/Leaderboard'
 import Bracket from './pages/Bracket'
+import Teams from './pages/Teams'
 import Admin from './pages/Admin'
 import Login from './pages/Login'
 
@@ -27,6 +28,7 @@ export default function App() {
               <Route path="/groups" element={<Groups />} />
               <Route path="/leaderboard" element={<Leaderboard />} />
               <Route path="/bracket" element={<Bracket />} />
+              <Route path="/teams" element={<Teams />} />
               <Route path="/admin" element={<Admin />} />
               <Route path="/login" element={<Login />} />
             </Routes>

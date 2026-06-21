@@ -6,6 +6,7 @@ const NAV_LINKS = [
   { to: '/fixtures', label: 'Fixtures' },
   { to: '/groups', label: 'Groups' },
   { to: '/bracket', label: 'Bracket' },
+  { to: '/teams', label: 'Teams' },
   { to: '/leaderboard', label: 'Leaderboard' },
   { to: '/predictions', label: 'My Picks' },
 ]
