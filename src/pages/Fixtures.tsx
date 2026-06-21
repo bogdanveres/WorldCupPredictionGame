@@ -65,12 +65,13 @@ export default function Fixtures() {
     todayRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  // Auto-scroll to today on initial load
+  // Auto-scroll to today once, when match data first loads and today's section is rendered
+  const scrolledOnce = useRef(false)
   useEffect(() => {
-    if (todayRef.current) {
-      setTimeout(() => todayRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
-    }
-  }, [])
+    if (scrolledOnce.current || !todayRef.current) return
+    scrolledOnce.current = true
+    setTimeout(() => todayRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+  }, [sortedDays])
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
