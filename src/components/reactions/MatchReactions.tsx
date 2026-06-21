@@ -35,9 +35,11 @@ export interface Reaction {
 export default function MatchReactions({
   matchId,
   reactions,
+  userNames = {},
 }: {
   matchId: string
   reactions: Reaction[]
+  userNames?: Record<string, string>
 }) {
   const { user } = useAuth()
   const [commenting, setCommenting] = useState(false)
@@ -144,9 +146,10 @@ export default function MatchReactions({
         <div className="space-y-1.5">
           {reactions.map(r => {
             const isMe = r.userId === user?.uid
-            const inits = initials(r.displayName)
+            const name = r.displayName || userNames[r.userId] || ''
+            const inits = initials(name)
             const color = avatarColor(r.userId)
-            const firstName = r.displayName?.split(' ')[0] || 'User'
+            const firstName = name.split(' ')[0] || 'User'
             return (
               <div key={r.userId} className="flex items-center gap-2 min-w-0">
                 <div

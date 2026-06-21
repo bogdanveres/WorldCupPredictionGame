@@ -24,6 +24,7 @@ export default function Fixtures() {
   const [selectedRound, setSelectedRound] = useState<MatchRound | 'ALL'>('ALL')
   const [selectedGroup, setSelectedGroup] = useState<string>('ALL')
   const [reactionsMap, setReactionsMap] = useState<Record<string, Reaction[]>>({})
+  const [userNames, setUserNames] = useState<Record<string, string>>({})
   const { getMatches, teamMap } = useData()
   const todayRef = useRef<HTMLDivElement>(null)
 
@@ -36,6 +37,17 @@ export default function Fixtures() {
         map[r.matchId].push(r)
       }
       setReactionsMap(map)
+    })
+  }, [])
+
+  useEffect(() => {
+    return onSnapshot(collection(db, 'users'), snap => {
+      const map: Record<string, string> = {}
+      for (const d of snap.docs) {
+        const data = d.data()
+        if (data.displayName) map[d.id] = data.displayName
+      }
+      setUserNames(map)
     })
   }, [])
 
@@ -158,6 +170,7 @@ export default function Fixtures() {
                   awayTeam={teamMap[m.awayTeamId]}
                   isToday={isToday}
                   reactions={reactionsMap[m.id] ?? []}
+                  userNames={userNames}
                 />
               ))}
             </div>

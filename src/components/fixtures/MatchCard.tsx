@@ -11,9 +11,10 @@ interface Props {
   showPrediction?: boolean
   isToday?: boolean
   reactions?: Reaction[]
+  userNames?: Record<string, string>
 }
 
-export default function MatchCard({ match, homeTeam, awayTeam, showPrediction = true, isToday = false, reactions }: Props) {
+export default function MatchCard({ match, homeTeam, awayTeam, showPrediction = true, isToday = false, reactions, userNames }: Props) {
   const isFinished = match.status === 'FINISHED'
   const isLive = match.status === 'LIVE'
   const hasScore = match.homeScore !== null && match.awayScore !== null
@@ -65,7 +66,7 @@ export default function MatchCard({ match, homeTeam, awayTeam, showPrediction = 
       )}
 
       {isFinished && reactions !== undefined && (
-        <MatchReactions matchId={match.id} reactions={reactions} />
+        <MatchReactions matchId={match.id} reactions={reactions} userNames={userNames} />
       )}
     </div>
   )
