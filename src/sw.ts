@@ -4,6 +4,10 @@ import { NavigationRoute, registerRoute } from 'workbox-routing'
 
 declare const self: ServiceWorkerGlobalScope & typeof globalThis
 
+// Take over immediately when a new version is deployed
+self.addEventListener('install', () => self.skipWaiting())
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()))
+
 cleanupOutdatedCaches()
 precacheAndRoute(self.__WB_MANIFEST)
 
