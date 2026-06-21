@@ -1,16 +1,40 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="40" fill="#0f172a"/>
-  <circle cx="96" cy="96" r="72" fill="#1e293b"/>
-  <circle cx="96" cy="96" r="60" fill="#0f172a"/>
-  <!-- Football patches -->
-  <polygon points="96,44 114,56 108,74 84,74 78,56" fill="#f8fafc"/>
-  <polygon points="148,80 145,100 128,108 116,94 122,75" fill="#f8fafc"/>
-  <polygon points="137,134 120,146 96,138 96,118 114,112" fill="#f8fafc"/>
-  <polygon points="55,134 72,146 96,138 96,118 78,112" fill="#f8fafc"/>
-  <polygon points="44,80 47,100 64,108 76,94 70,75" fill="#f8fafc"/>
-  <!-- Center hexagon -->
-  <polygon points="96,60 112,70 112,90 96,100 80,90 80,70" fill="#0f172a"/>
-  <circle cx="96" cy="96" r="72" fill="none" stroke="#3b82f6" stroke-width="4"/>
-  <!-- WC text -->
-  <text x="96" y="175" text-anchor="middle" fill="#3b82f6" font-family="system-ui,sans-serif" font-size="18" font-weight="bold">WC2026</text>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1e3a5f"/>
+      <stop offset="100%" stop-color="#0d1f3c"/>
+    </radialGradient>
+    <radialGradient id="ball" cx="38%" cy="32%" r="62%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#c8c8c8"/>
+    </radialGradient>
+    <clipPath id="c">
+      <circle cx="96" cy="94" r="64"/>
+    </clipPath>
+  </defs>
+  <!-- Background -->
+  <rect width="192" height="192" rx="26" fill="url(#bg)"/>
+  <!-- Ball shadow -->
+  <circle cx="99" cy="97" r="64" fill="#000" opacity="0.25"/>
+  <!-- Ball -->
+  <circle cx="96" cy="94" r="64" fill="url(#ball)"/>
+  <!-- Classic football patches (clipped to ball) -->
+  <g clip-path="url(#c)" fill="#1a1a1a">
+    <!-- center pentagon (vertex pointing up) -->
+    <polygon points="96,72 116,86 108,110 84,110 77,86"/>
+    <!-- top -->
+    <polygon points="96,60 116,46 108,22 84,22 76,46"/>
+    <!-- upper-right -->
+    <polygon points="116,67 141,67 148,43 128,29 108,43"/>
+    <!-- lower-right -->
+    <polygon points="128,105 136,128 161,128 168,105 148,90"/>
+    <!-- bottom -->
+    <polygon points="96,128 76,143 84,166 108,166 116,143"/>
+    <!-- lower-left -->
+    <polygon points="64,105 44,90 24,105 31,128 56,128"/>
+    <!-- upper-left -->
+    <polygon points="76,67 84,43 64,29 44,43 51,67"/>
+  </g>
+  <!-- Shine highlight -->
+  <ellipse cx="76" cy="72" rx="16" ry="11" fill="#fff" opacity="0.4" transform="rotate(-20,76,72)"/>
 </svg>

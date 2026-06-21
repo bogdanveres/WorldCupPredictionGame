@@ -1,13 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <circle cx="50" cy="50" r="48" fill="#1e293b" stroke="#334155" stroke-width="2"/>
-  <circle cx="50" cy="50" r="38" fill="#0f172a"/>
-  <!-- Pentagon patches -->
-  <polygon points="50,18 62,26 57,40 43,40 38,26" fill="#f8fafc"/>
-  <polygon points="82,38 80,52 68,58 60,48 65,35" fill="#f8fafc"/>
-  <polygon points="74,72 62,80 50,74 50,60 64,56" fill="#f8fafc"/>
-  <polygon points="26,72 38,80 50,74 50,60 36,56" fill="#f8fafc"/>
-  <polygon points="18,38 20,52 32,58 40,48 35,35" fill="#f8fafc"/>
-  <!-- Hexagon fill (dark) connecting patches -->
-  <polygon points="50,28 60,34 60,46 50,52 40,46 40,34" fill="#0f172a"/>
-  <circle cx="50" cy="50" r="48" fill="none" stroke="#3b82f6" stroke-width="2.5"/>
+  <defs>
+    <radialGradient id="ball" cx="38%" cy="32%" r="62%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#c8c8c8"/>
+    </radialGradient>
+    <clipPath id="c">
+      <circle cx="50" cy="49" r="47"/>
+    </clipPath>
+  </defs>
+  <!-- Ball -->
+  <circle cx="50" cy="49" r="47" fill="url(#ball)"/>
+  <!-- Classic football patches -->
+  <g clip-path="url(#c)" fill="#1a1a1a">
+    <!-- center pentagon -->
+    <polygon points="50,38 60,45 56,57 44,57 40,45"/>
+    <!-- top -->
+    <polygon points="50,31 60,24 56,11 44,11 40,24"/>
+    <!-- upper-right -->
+    <polygon points="60,35 73,35 77,22 67,15 56,22"/>
+    <!-- lower-right -->
+    <polygon points="67,55 71,67 84,67 87,55 77,47"/>
+    <!-- bottom -->
+    <polygon points="50,67 40,74 44,86 56,86 60,74"/>
+    <!-- lower-left -->
+    <polygon points="33,55 23,47 12,55 16,67 29,67"/>
+    <!-- upper-left -->
+    <polygon points="40,35 44,22 33,15 23,22 27,35"/>
+  </g>
+  <!-- Shine highlight -->
+  <ellipse cx="38" cy="37" rx="9" ry="6" fill="#fff" opacity="0.45" transform="rotate(-20,38,37)"/>
 </svg>
