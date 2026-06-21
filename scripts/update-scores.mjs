@@ -46,8 +46,14 @@ const ESPN_TO_ID = {
 }
 
 function espnToId(abbr) {
+  if (!abbr) return 'TBD'
   const lower = abbr.toLowerCase()
+  if (lower === 'tbd' || lower === '') return 'TBD'
   return ESPN_TO_ID[lower] ?? abbr.toUpperCase()
+}
+
+function isRealTeam(id) {
+  return id && id !== 'TBD'
 }
 
 // ─── Status mapping ────────────────────────────────────────────────────────
@@ -100,14 +106,29 @@ const activeMatches = fsMatches.filter(m => {
   return nowMs >= kickoff - BEFORE_MS && nowMs <= kickoff + AFTER_MS + CATCH_UP_MS
 })
 
-if (activeMatches.length === 0) {
-  console.log('No active matches — skipping API call.')
+// Also scan upcoming knockout matches with TBD teams within 3 days so we
+// pick up confirmed team IDs from ESPN as soon as the group stage ends.
+const KO_LOOKAHEAD_MS = 3 * 24 * 60 * 60 * 1000
+const tbdKoMatches = fsMatches.filter(m => {
+  if (m.status !== 'SCHEDULED' || m.round === 'GROUP' || !m.scheduledKickoffUtc) return false
+  if (m.homeTeamId !== 'TBD' && m.awayTeamId !== 'TBD') return false
+  const kickoff = new Date(m.scheduledKickoffUtc).getTime()
+  return kickoff > nowMs && kickoff <= nowMs + KO_LOOKAHEAD_MS
+})
+
+// Deduplicate by match ID
+const allToProcess = [...new Map(
+  [...activeMatches, ...tbdKoMatches].map(m => [m.id, m])
+).values()]
+
+if (allToProcess.length === 0) {
+  console.log('No active or upcoming TBD matches — skipping API call.')
   process.exit(0)
 }
 
 // Gather unique dates to query ESPN (may span two UTC days)
-const activeDates = [...new Set(activeMatches.map(m => m.scheduledKickoffUtc.slice(0, 10)))].sort()
-console.log(`Active/missed: ${activeMatches.map(m => m.id).join(', ')} (dates: ${activeDates.join(', ')})`)
+const activeDates = [...new Set(allToProcess.map(m => m.scheduledKickoffUtc.slice(0, 10)))].sort()
+console.log(`Processing: ${allToProcess.map(m => m.id).join(', ')} (dates: ${activeDates.join(', ')})`)
 
 // ─── Fetch from ESPN (free, no API key) ───────────────────────────────────
 const allEvents = []
@@ -166,6 +187,13 @@ for (const event of allEvents) {
   const statusType = comp.status?.type
   const newStatus  = mapEspnStatus(statusType)
 
+  // Resolve team IDs: use ESPN's value when our record still has TBD
+  const resolvedHomeId = (fsMatch.homeTeamId === 'TBD' && isRealTeam(hId)) ? hId : fsMatch.homeTeamId
+  const resolvedAwayId = (fsMatch.awayTeamId === 'TBD' && isRealTeam(aId)) ? aId : fsMatch.awayTeamId
+  const teamChanged =
+    resolvedHomeId !== fsMatch.homeTeamId ||
+    resolvedAwayId !== fsMatch.awayTeamId
+
   // Don't apply scores for pre-match events (ESPN sends "0" before kickoff)
   const parseScore = s => {
     if (newStatus === 'SCHEDULED') return null
@@ -178,23 +206,32 @@ for (const event of allEvents) {
   const changed =
     fsMatch.status    !== newStatus ||
     fsMatch.homeScore !== newHome   ||
-    fsMatch.awayScore !== newAway
+    fsMatch.awayScore !== newAway   ||
+    teamChanged
 
   if (!changed) continue
 
+  // Use ESPN's winner flag — correctly handles AET and penalty shootouts
   let winnerId = null
-  if (newStatus === 'FINISHED' && newHome !== null && newAway !== null) {
-    if (newHome > newAway) winnerId = fsMatch.homeTeamId
-    else if (newAway > newHome) winnerId = fsMatch.awayTeamId
+  if (newStatus === 'FINISHED') {
+    if (homeComp.winner === true)       winnerId = resolvedHomeId
+    else if (awayComp.winner === true)  winnerId = resolvedAwayId
+    else if (newHome !== null && newAway !== null) {
+      if (newHome > newAway)      winnerId = resolvedHomeId
+      else if (newAway > newHome) winnerId = resolvedAwayId
+    }
   }
 
-  console.log(`  ${fsMatch.id} ${hId} ${newHome ?? '?'}-${newAway ?? '?'} ${aId} [${newStatus}]`)
+  if (teamChanged) {
+    console.log(`  ${fsMatch.id} team IDs resolved: ${resolvedHomeId} vs ${resolvedAwayId}`)
+  }
+  console.log(`  ${fsMatch.id} ${resolvedHomeId} ${newHome ?? '?'}-${newAway ?? '?'} ${resolvedAwayId} [${newStatus}]`)
 
   updates.push({
     id: fsMatch.id,
     prevStatus: fsMatch.status,
-    homeTeamId: fsMatch.homeTeamId,
-    awayTeamId: fsMatch.awayTeamId,
+    homeTeamId: resolvedHomeId,
+    awayTeamId: resolvedAwayId,
     status: newStatus,
     homeScore: newHome,
     awayScore: newAway,
@@ -212,7 +249,8 @@ if (updates.length === 0) {
 const matchBatch = db.batch()
 for (const u of updates) {
   // eslint-disable-next-line no-unused-vars
-  const { id, prevStatus, homeTeamId, awayTeamId, ...fields } = u
+  const { id, prevStatus, ...fields } = u
+  // homeTeamId and awayTeamId are included — they may have been resolved from TBD
   matchBatch.update(db.collection('matches').doc(id), fields)
 }
 await matchBatch.commit()
