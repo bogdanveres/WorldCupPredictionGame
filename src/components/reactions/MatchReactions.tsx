@@ -5,9 +5,27 @@ import { useAuth } from '../auth/AuthProvider'
 
 const EMOJIS = ['🔥', '😍', '😤', '😂', '🤯']
 
+const AVATAR_COLORS = [
+  'bg-blue-600', 'bg-purple-600', 'bg-emerald-600',
+  'bg-amber-600', 'bg-rose-600', 'bg-cyan-600',
+  'bg-indigo-600', 'bg-orange-500',
+]
+
+function avatarColor(userId: string) {
+  let h = 0
+  for (let i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) & 0xff
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]
+}
+
+function initials(name: string | undefined) {
+  if (!name) return '?'
+  return name.split(' ').filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('')
+}
+
 export interface Reaction {
   matchId: string
   userId: string
+  displayName: string
   emoji: string
   comment: string
   createdAt: string
@@ -38,6 +56,7 @@ export default function MatchReactions({
       await setDoc(ref, {
         matchId,
         userId: user.uid,
+        displayName: user.displayName ?? '',
         emoji,
         comment: myReaction?.comment ?? '',
         createdAt: myReaction?.createdAt ?? now,
@@ -58,15 +77,14 @@ export default function MatchReactions({
     setCommenting(false)
   }
 
-  // Aggregate counts per emoji
   const counts: Record<string, number> = {}
   for (const r of reactions) counts[r.emoji] = (counts[r.emoji] ?? 0) + 1
 
-  const comments = reactions.filter(r => r.comment?.trim())
   const hasAny = reactions.length > 0
 
   return (
     <div className={`space-y-2 ${hasAny || user ? 'mt-2' : ''}`}>
+      {/* Emoji pill buttons */}
       <div className="flex items-center gap-1 flex-wrap">
         {EMOJIS.map(emoji => {
           const count = counts[emoji] ?? 0
@@ -94,6 +112,7 @@ export default function MatchReactions({
         })}
       </div>
 
+      {/* Comment input */}
       {commenting && myReaction && (
         <div className="flex items-center gap-1.5">
           <input
@@ -120,23 +139,40 @@ export default function MatchReactions({
         </div>
       )}
 
-      {!commenting && myReaction && !myReaction.comment && (
-        <button
-          onClick={() => { setDraftComment(''); setCommenting(true) }}
-          className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
-        >
-          + add comment
-        </button>
-      )}
-
-      {comments.length > 0 && (
-        <div className="space-y-1">
-          {comments.map(r => (
-            <div key={r.userId} className="flex items-start gap-1.5">
-              <span className="text-sm leading-none mt-0.5">{r.emoji}</span>
-              <span className="text-xs text-slate-400 leading-snug">{r.comment}</span>
-            </div>
-          ))}
+      {/* Per-user attributed reactions list */}
+      {reactions.length > 0 && (
+        <div className="space-y-1.5">
+          {reactions.map(r => {
+            const isMe = r.userId === user?.uid
+            const inits = initials(r.displayName)
+            const color = avatarColor(r.userId)
+            const firstName = r.displayName?.split(' ')[0] || 'User'
+            return (
+              <div key={r.userId} className="flex items-center gap-2 min-w-0">
+                <div
+                  className={`shrink-0 w-5 h-5 rounded-full ${color} flex items-center justify-center text-white font-bold leading-none`}
+                  style={{ fontSize: '9px' }}
+                >
+                  {inits}
+                </div>
+                <span className="text-xs text-slate-400 shrink-0">{firstName}</span>
+                <span className="text-sm leading-none shrink-0">{r.emoji}</span>
+                {r.comment ? (
+                  <span className="text-xs text-slate-300 truncate flex-1 min-w-0">{r.comment}</span>
+                ) : (
+                  <span className="flex-1" />
+                )}
+                {isMe && !commenting && (
+                  <button
+                    onClick={() => { setDraftComment(r.comment ?? ''); setCommenting(true) }}
+                    className="shrink-0 text-xs text-slate-600 hover:text-slate-400 transition-colors"
+                  >
+                    {r.comment ? 'edit' : '+ comment'}
+                  </button>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
