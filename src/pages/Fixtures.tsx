@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
+import { collection, onSnapshot } from 'firebase/firestore'
 import { useData } from '../contexts/DataContext'
+import { db } from '../services/firebase'
 import MatchCard from '../components/fixtures/MatchCard'
+import type { Reaction } from '../components/reactions/MatchReactions'
 import type { MatchRound } from '../types'
 import { romaniaGameDateStr, todayRomaniaGameDateStr } from '../utils/timezone'
 
@@ -20,8 +23,21 @@ const ROUNDS: { value: MatchRound | 'ALL'; label: string }[] = [
 export default function Fixtures() {
   const [selectedRound, setSelectedRound] = useState<MatchRound | 'ALL'>('ALL')
   const [selectedGroup, setSelectedGroup] = useState<string>('ALL')
+  const [reactionsMap, setReactionsMap] = useState<Record<string, Reaction[]>>({})
   const { getMatches, teamMap } = useData()
   const todayRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    return onSnapshot(collection(db, 'reactions'), snap => {
+      const map: Record<string, Reaction[]> = {}
+      for (const d of snap.docs) {
+        const r = d.data() as Reaction
+        if (!map[r.matchId]) map[r.matchId] = []
+        map[r.matchId].push(r)
+      }
+      setReactionsMap(map)
+    })
+  }, [])
 
   const allMatches = getMatches(selectedRound !== 'ALL' ? { round: selectedRound } : undefined)
 
@@ -140,6 +156,7 @@ export default function Fixtures() {
                   homeTeam={teamMap[m.homeTeamId]}
                   awayTeam={teamMap[m.awayTeamId]}
                   isToday={isToday}
+                  reactions={reactionsMap[m.id] ?? []}
                 />
               ))}
             </div>

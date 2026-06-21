@@ -45,6 +45,7 @@ jobs:
           VITE_ADMIN_EMAILS: ${{ secrets.VITE_ADMIN_EMAILS }}
           VITE_DATA_PROVIDER: ${{ vars.VITE_DATA_PROVIDER }}
           VITE_API_KEY: ${{ secrets.VITE_API_KEY }}
+          VITE_VAPID_PUBLIC_KEY: ${{ secrets.VITE_VAPID_PUBLIC_KEY }}
         run: npm run build
 
       - name: Setup Pages

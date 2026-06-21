@@ -1,6 +1,8 @@
+import { useState, useEffect } from 'react'
 import type { Match, Team } from '../../types'
 import { formatKickoffDisplay } from '../../utils/timezone'
 import PredictionForm from '../predictions/PredictionForm'
+import MatchReactions, { type Reaction } from '../reactions/MatchReactions'
 
 interface Props {
   match: Match
@@ -8,17 +10,10 @@ interface Props {
   awayTeam: Team | undefined
   showPrediction?: boolean
   isToday?: boolean
+  reactions?: Reaction[]
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  SCHEDULED: '',
-  LIVE: 'LIVE',
-  FINISHED: 'FT',
-  POSTPONED: 'POSTPONED',
-  ABANDONED: 'ABA',
-}
-
-export default function MatchCard({ match, homeTeam, awayTeam, showPrediction = true, isToday = false }: Props) {
+export default function MatchCard({ match, homeTeam, awayTeam, showPrediction = true, isToday = false, reactions }: Props) {
   const isFinished = match.status === 'FINISHED'
   const isLive = match.status === 'LIVE'
   const hasScore = match.homeScore !== null && match.awayScore !== null
@@ -53,9 +48,10 @@ export default function MatchCard({ match, homeTeam, awayTeam, showPrediction = 
             <div className="text-sm text-slate-300 text-center">
               {match.status === 'SCHEDULED'
                 ? formatKickoffDisplay(match.scheduledKickoffUtc)
-                : STATUS_LABEL[match.status] ?? match.status}
+                : (match.status === 'POSTPONED' ? 'POSTPONED' : match.status)}
             </div>
           )}
+          {match.status === 'SCHEDULED' && <Countdown kickoffUtc={match.scheduledKickoffUtc} />}
           {(match.status === 'SCHEDULED' || isLive || isFinished) && (
             <div className="text-xs text-slate-500 mt-0.5">{match.city}</div>
           )}
@@ -67,21 +63,40 @@ export default function MatchCard({ match, homeTeam, awayTeam, showPrediction = 
       {showPrediction && match.homeTeamId !== 'TBD' && (
         <PredictionForm match={match} />
       )}
+
+      {isFinished && reactions !== undefined && (
+        <MatchReactions matchId={match.id} reactions={reactions} />
+      )}
     </div>
   )
 }
 
-function TeamSide({
-  team,
-  align,
-}: {
-  team: Team | undefined
-  align: 'left' | 'right'
-}) {
+function Countdown({ kickoffUtc }: { kickoffUtc: string }) {
+  const [label, setLabel] = useState<string | null>(null)
+
+  useEffect(() => {
+    const calc = () => {
+      const diff = new Date(kickoffUtc).getTime() - Date.now()
+      if (diff <= 0 || diff > 24 * 60 * 60 * 1000) {
+        setLabel(null)
+        return
+      }
+      const h = Math.floor(diff / 3_600_000)
+      const m = Math.floor((diff % 3_600_000) / 60_000)
+      setLabel(h > 0 ? `Closes in ${h}h ${m}m` : `Closes in ${m}m`)
+    }
+    calc()
+    const id = setInterval(calc, 30_000)
+    return () => clearInterval(id)
+  }, [kickoffUtc])
+
+  if (!label) return null
+  return <div className="text-xs text-amber-400 mt-0.5 font-medium">{label}</div>
+}
+
+function TeamSide({ team, align }: { team: Team | undefined; align: 'left' | 'right' }) {
   return (
-    <div
-      className={`flex items-center gap-2 flex-1 ${align === 'right' ? 'flex-row-reverse' : ''}`}
-    >
+    <div className={`flex items-center gap-2 flex-1 ${align === 'right' ? 'flex-row-reverse' : ''}`}>
       <span className="text-2xl leading-none">{team?.flagEmoji ?? '🏳'}</span>
       <span className="text-sm font-semibold text-white truncate">
         {team?.shortName ?? 'TBD'}

@@ -77,6 +77,7 @@ export interface LeaderboardEntry {
   photoURL: string | null
   totalPoints: number
   rank: number
+  previousRank: number | null
   exactScoreCount: number
   correctOutcomeCount: number
   correctDrawCount: number

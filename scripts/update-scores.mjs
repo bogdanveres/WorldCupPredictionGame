@@ -1,5 +1,6 @@
 import { initializeApp, cert } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
+import webpush from 'web-push'
 
 const SA = process.env.FIREBASE_SERVICE_ACCOUNT
 
@@ -10,6 +11,30 @@ if (!SA) {
 
 initializeApp({ credential: cert(JSON.parse(SA)) })
 const db = getFirestore()
+
+// ─── Web Push (optional — skipped if VAPID keys not set) ──────────────────
+const VAPID_SUBJECT     = process.env.VAPID_SUBJECT
+const VAPID_PUBLIC_KEY  = process.env.VAPID_PUBLIC_KEY
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY
+const pushEnabled = VAPID_SUBJECT && VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY
+if (pushEnabled) {
+  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
+}
+
+async function sendPushToAll(payload) {
+  if (!pushEnabled) return
+  const subsSnap = await db.collection('pushSubscriptions').get()
+  const sends = subsSnap.docs.map(async d => {
+    try {
+      await webpush.sendNotification(d.data().subscription, JSON.stringify(payload))
+    } catch (err) {
+      if (err.statusCode === 410 || err.statusCode === 404) {
+        await d.ref.delete()
+      }
+    }
+  })
+  await Promise.allSettled(sends)
+}
 
 // ─── ESPN abbreviation → our team ID (only where they differ) ────────────
 const ESPN_TO_ID = {
@@ -167,6 +192,9 @@ for (const event of allEvents) {
 
   updates.push({
     id: fsMatch.id,
+    prevStatus: fsMatch.status,
+    homeTeamId: fsMatch.homeTeamId,
+    awayTeamId: fsMatch.awayTeamId,
     status: newStatus,
     homeScore: newHome,
     awayScore: newAway,
@@ -183,21 +211,49 @@ if (updates.length === 0) {
 // ─── Write match updates ───────────────────────────────────────────────────
 const matchBatch = db.batch()
 for (const u of updates) {
-  const { id, ...fields } = u
+  // eslint-disable-next-line no-unused-vars
+  const { id, prevStatus, homeTeamId, awayTeamId, ...fields } = u
   matchBatch.update(db.collection('matches').doc(id), fields)
 }
 await matchBatch.commit()
 console.log(`Wrote ${updates.length} match update(s).`)
 
+// ─── Push notifications for state changes ─────────────────────────────────
+// We need team names — build a quick map from the already-loaded teamSnap
+const teamNameMap = Object.fromEntries(teamSnap.docs.map(d => [d.id, d.data().shortName ?? d.id]))
+
+for (const u of updates) {
+  const homeShort = teamNameMap[u.homeTeamId] ?? '?'
+  const awayShort = teamNameMap[u.awayTeamId] ?? '?'
+
+  if (u.status === 'LIVE' && u.prevStatus === 'SCHEDULED') {
+    await sendPushToAll({
+      title: '⚽ Match Starting',
+      body: `${homeShort} vs ${awayShort} — make your prediction!`,
+      tag: `live-${u.id}`,
+      url: '/WorldCupPredictionGame/',
+    })
+  } else if (u.status === 'FINISHED' && u.prevStatus !== 'FINISHED') {
+    const score = u.homeScore !== null ? `${u.homeScore}–${u.awayScore}` : ''
+    await sendPushToAll({
+      title: '🏁 Full Time',
+      body: `${homeShort} ${score} ${awayShort}`,
+      tag: `ft-${u.id}`,
+      url: '/WorldCupPredictionGame/',
+    })
+  }
+}
+
 // ─── Recalculate leaderboard ───────────────────────────────────────────────
 // Runs on every score change. LIVE match points are provisional; FINISHED are final.
 console.log('Recalculating leaderboard...')
 
-const [finSnap, liveSnap, predSnap, userSnap] = await Promise.all([
+const [finSnap, liveSnap, predSnap, userSnap, picksSnap] = await Promise.all([
   db.collection('matches').where('status', '==', 'FINISHED').get(),
   db.collection('matches').where('status', '==', 'LIVE').get(),
   db.collection('predictions').get(),
   db.collection('users').get(),
+  db.collection('picks').get(),
 ])
 
 const finMap       = Object.fromEntries(finSnap.docs.map(d => [d.id, d.data()]))
@@ -232,6 +288,31 @@ for (let i = 0; i < pointRows.length; i += 400) {
   await b.commit()
 }
 
+// ─── Tournament winner bonus ───────────────────────────────────────────────
+// 10 bonus points for correctly picking the tournament winner (FINAL result).
+const WINNER_BONUS = 10
+const finalMatch = finSnap.docs.map(d => d.data()).find(m => m.round === 'FINAL' && m.winnerTeamId)
+const tournamentWinnerId = finalMatch?.winnerTeamId ?? null
+const picks = picksSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+
+if (tournamentWinnerId) {
+  const bonusBatch = db.batch()
+  for (const pick of picks) {
+    const bonus = pick.teamId === tournamentWinnerId ? WINNER_BONUS : 0
+    bonusBatch.set(db.collection('picks').doc(pick.id), { bonusPoints: bonus }, { merge: true })
+    if (bonus > 0) {
+      if (!statsClean[pick.userId]) statsClean[pick.userId] = { totalPoints: 0, exactScoreCount: 0, correctOutcomeCount: 0, correctDrawCount: 0, predictionsSubmitted: 0 }
+      statsClean[pick.userId].totalPoints += bonus
+      console.log(`  Winner bonus +${bonus} pts → ${pick.userId}`)
+    }
+  }
+  await bonusBatch.commit()
+}
+
+// Read current ranks to compute previousRank before overwriting
+const currentLbSnap = await db.collection('leaderboard').get()
+const currentRankMap = Object.fromEntries(currentLbSnap.docs.map(d => [d.id, d.data().rank ?? null]))
+
 // Write leaderboard + user totals
 const sorted = Object.entries(statsClean).sort(([, a], [, b]) => {
   if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints
@@ -245,8 +326,9 @@ let rank = 1
 for (const [uid, s] of sorted) {
   lbBatch.set(db.collection('leaderboard').doc(uid), {
     uid,
-    displayName: userInfo[uid]?.displayName ?? uid,
-    photoURL:    userInfo[uid]?.photoURL    ?? null,
+    displayName:  userInfo[uid]?.displayName ?? uid,
+    photoURL:     userInfo[uid]?.photoURL    ?? null,
+    previousRank: currentRankMap[uid] ?? null,
     rank, lastCalculated: nowIso, ...s,
   })
   lbBatch.update(db.collection('users').doc(uid), {

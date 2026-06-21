@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="40" fill="#0f172a"/>
+  <circle cx="96" cy="96" r="72" fill="#1e293b"/>
+  <circle cx="96" cy="96" r="60" fill="#0f172a"/>
+  <!-- Football patches -->
+  <polygon points="96,44 114,56 108,74 84,74 78,56" fill="#f8fafc"/>
+  <polygon points="148,80 145,100 128,108 116,94 122,75" fill="#f8fafc"/>
+  <polygon points="137,134 120,146 96,138 96,118 114,112" fill="#f8fafc"/>
+  <polygon points="55,134 72,146 96,138 96,118 78,112" fill="#f8fafc"/>
+  <polygon points="44,80 47,100 64,108 76,94 70,75" fill="#f8fafc"/>
+  <!-- Center hexagon -->
+  <polygon points="96,60 112,70 112,90 96,100 80,90 80,70" fill="#0f172a"/>
+  <circle cx="96" cy="96" r="72" fill="none" stroke="#3b82f6" stroke-width="4"/>
+  <!-- WC text -->
+  <text x="96" y="175" text-anchor="middle" fill="#3b82f6" font-family="system-ui,sans-serif" font-size="18" font-weight="bold">WC2026</text>
+</svg>

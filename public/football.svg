@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <circle cx="50" cy="50" r="48" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+  <circle cx="50" cy="50" r="38" fill="#0f172a"/>
+  <!-- Pentagon patches -->
+  <polygon points="50,18 62,26 57,40 43,40 38,26" fill="#f8fafc"/>
+  <polygon points="82,38 80,52 68,58 60,48 65,35" fill="#f8fafc"/>
+  <polygon points="74,72 62,80 50,74 50,60 64,56" fill="#f8fafc"/>
+  <polygon points="26,72 38,80 50,74 50,60 36,56" fill="#f8fafc"/>
+  <polygon points="18,38 20,52 32,58 40,48 35,35" fill="#f8fafc"/>
+  <!-- Hexagon fill (dark) connecting patches -->
+  <polygon points="50,28 60,34 60,46 50,52 40,46 40,34" fill="#0f172a"/>
+  <circle cx="50" cy="50" r="48" fill="none" stroke="#3b82f6" stroke-width="2.5"/>
+</svg>

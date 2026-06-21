@@ -87,6 +87,7 @@ export async function recalculateLeaderboard(matches: Match[]): Promise<number> 
         uid,
         displayName: userInfoMap[uid]?.displayName ?? uid,
         photoURL: userInfoMap[uid]?.photoURL ?? null,
+        previousRank: null,
         rank,
         lastCalculated: now,
         ...stats,
