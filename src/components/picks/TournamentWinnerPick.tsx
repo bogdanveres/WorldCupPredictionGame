@@ -66,7 +66,8 @@ export default function TournamentWinnerPick() {
       await setDoc(doc(db, 'picks', user.uid), {
         userId: user.uid,
         teamId,
-        submittedAt: new Date().toISOString(),
+        submittedAt: myPick?.submittedAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       })
       setModalOpen(false)
     } finally {
@@ -110,8 +111,8 @@ export default function TournamentWinnerPick() {
                         ? tournamentWinnerId === myPick.teamId
                           ? '🎉 Correct! Bonus points awarded.'
                           : `Eliminated · Winner was ${teamMap[tournamentWinnerId]?.name ?? tournamentWinnerId}`
-                        : 'Pick locked · awaiting result'
-                      : `Locked when knockouts start · ${BONUS_PTS} pts if correct`}
+                        : 'Locked · awaiting knockout result'
+                      : `Can change until group stage ends · ${BONUS_PTS} pts if correct`}
                   </div>
                 </div>
               </div>
