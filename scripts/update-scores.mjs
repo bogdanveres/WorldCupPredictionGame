@@ -60,9 +60,10 @@ function isRealTeam(id) {
 function mapEspnStatus(statusType) {
   const state     = statusType?.state      // 'pre' | 'in' | 'post'
   const completed = statusType?.completed  // boolean
-  if (state === 'in')                 return 'LIVE'
-  if (state === 'post' && completed)  return 'FINISHED'
-  if (state === 'post' && !completed) return 'POSTPONED'
+  // completed flag wins — ESPN briefly emits state='in' && completed=true at FT
+  if (completed)        return 'FINISHED'
+  if (state === 'in')   return 'LIVE'
+  if (state === 'post') return 'POSTPONED'
   return 'SCHEDULED'
 }
 
@@ -98,8 +99,15 @@ const [matchSnap, teamSnap] = await Promise.all([
 
 const fsMatches = matchSnap.docs.map(d => ({ id: d.id, ...d.data() }))
 
+const REVERIFY_MS = 48 * 60 * 60 * 1000  // re-check recently finished matches for 48h
+
 const activeMatches = fsMatches.filter(m => {
   if (m.status === 'LIVE') return true
+  if (m.status === 'FINISHED' && m.scheduledKickoffUtc) {
+    // Reverify recently finished matches — catches stale-LIVE and wrong-score bugs
+    const kickoff = new Date(m.scheduledKickoffUtc).getTime()
+    return nowMs - kickoff <= REVERIFY_MS
+  }
   if (m.status !== 'SCHEDULED' || !m.scheduledKickoffUtc) return false
   const kickoff = new Date(m.scheduledKickoffUtc).getTime()
   // Normal window OR catch-up for missed games
@@ -151,9 +159,15 @@ if (allEvents.length === 0) {
   process.exit(0)
 }
 
-// Index Firestore matches by kickoff minute (YYYY-MM-DDTHH:MM)
+// Index Firestore matches by kickoff minute (YYYY-MM-DDTHH:MM) — used as fallback for TBD KO matches
 const byKickoff = Object.fromEntries(
   fsMatches.map(m => [m.scheduledKickoffUtc?.slice(0, 16), m])
+)
+// Index by team pair — primary key, immune to kickoff time errors and simultaneous-match collisions
+const byTeamPair = Object.fromEntries(
+  fsMatches
+    .filter(m => m.homeTeamId !== 'TBD' && m.awayTeamId !== 'TBD')
+    .map(m => [`${m.homeTeamId}:${m.awayTeamId}`, m])
 )
 
 // ─── Match ESPN events → Firestore matches ─────────────────────────────────
@@ -170,14 +184,11 @@ for (const event of allEvents) {
   const hId = espnToId(homeComp.team.abbreviation)
   const aId = espnToId(awayComp.team.abbreviation)
 
-  // Primary: match by UTC kickoff timestamp
+  // Primary: team pair — unique per match, works for known-team fixtures
+  // Fallback: kickoff timestamp — covers TBD knockout matches before teams are confirmed
   const kickoffKey = event.date?.slice(0, 16)
-  let fsMatch = byKickoff[kickoffKey]
-
-  // Fallback: match by team IDs
-  if (!fsMatch) {
-    fsMatch = fsMatches.find(m => m.homeTeamId === hId && m.awayTeamId === aId)
-  }
+  let fsMatch = (hId !== 'TBD' && aId !== 'TBD') ? byTeamPair[`${hId}:${aId}`] : null
+  if (!fsMatch) fsMatch = byKickoff[kickoffKey]
 
   if (!fsMatch) {
     console.log(`  ⚠ unmatched: ${homeComp.team.abbreviation} vs ${awayComp.team.abbreviation} @ ${kickoffKey}`)
