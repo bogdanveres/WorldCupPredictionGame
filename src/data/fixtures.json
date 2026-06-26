@@ -382,42 +382,42 @@
     "homeTeamId": "CUW", "awayTeamId": "CIV",
     "scheduledKickoffUtc": "2026-06-25T20:00:00Z", "scheduledKickoffRomaniaTime": "2026-06-25T23:00:00+03:00",
     "venue": "Lincoln Financial Field", "city": "Philadelphia", "country": "USA",
-    "status": "SCHEDULED", "homeScore": null, "awayScore": null, "winnerTeamId": null
+    "status": "FINISHED", "homeScore": 0, "awayScore": 2, "winnerTeamId": "CIV"
   },
   {
     "id": "m056", "round": "GROUP", "group": "E",
     "homeTeamId": "ECU", "awayTeamId": "GER",
     "scheduledKickoffUtc": "2026-06-25T20:00:00Z", "scheduledKickoffRomaniaTime": "2026-06-25T23:00:00+03:00",
     "venue": "MetLife Stadium", "city": "East Rutherford", "country": "USA",
-    "status": "SCHEDULED", "homeScore": null, "awayScore": null, "winnerTeamId": null
+    "status": "FINISHED", "homeScore": 2, "awayScore": 1, "winnerTeamId": "ECU"
   },
   {
     "id": "m057", "round": "GROUP", "group": "F",
     "homeTeamId": "TUN", "awayTeamId": "NED",
     "scheduledKickoffUtc": "2026-06-25T23:00:00Z", "scheduledKickoffRomaniaTime": "2026-06-26T02:00:00+03:00",
     "venue": "Arrowhead Stadium", "city": "Kansas City", "country": "USA",
-    "status": "SCHEDULED", "homeScore": null, "awayScore": null, "winnerTeamId": null
+    "status": "FINISHED", "homeScore": 1, "awayScore": 3, "winnerTeamId": "NED"
   },
   {
     "id": "m058", "round": "GROUP", "group": "F",
     "homeTeamId": "JPN", "awayTeamId": "SWE",
     "scheduledKickoffUtc": "2026-06-25T23:00:00Z", "scheduledKickoffRomaniaTime": "2026-06-26T02:00:00+03:00",
     "venue": "AT&T Stadium", "city": "Arlington", "country": "USA",
-    "status": "SCHEDULED", "homeScore": null, "awayScore": null, "winnerTeamId": null
+    "status": "FINISHED", "homeScore": 1, "awayScore": 1, "winnerTeamId": null
   },
   {
     "id": "m059", "round": "GROUP", "group": "D",
     "homeTeamId": "TUR", "awayTeamId": "USA",
     "scheduledKickoffUtc": "2026-06-26T02:00:00Z", "scheduledKickoffRomaniaTime": "2026-06-26T05:00:00+03:00",
     "venue": "SoFi Stadium", "city": "Inglewood", "country": "USA",
-    "status": "SCHEDULED", "homeScore": null, "awayScore": null, "winnerTeamId": null
+    "status": "FINISHED", "homeScore": 3, "awayScore": 2, "winnerTeamId": "TUR"
   },
   {
     "id": "m060", "round": "GROUP", "group": "D",
     "homeTeamId": "PAR", "awayTeamId": "AUS",
     "scheduledKickoffUtc": "2026-06-26T02:00:00Z", "scheduledKickoffRomaniaTime": "2026-06-26T05:00:00+03:00",
     "venue": "Levi's Stadium", "city": "Santa Clara", "country": "USA",
-    "status": "SCHEDULED", "homeScore": null, "awayScore": null, "winnerTeamId": null
+    "status": "FINISHED", "homeScore": 0, "awayScore": 0, "winnerTeamId": null
   },
   {
     "id": "m061", "round": "GROUP", "group": "I",

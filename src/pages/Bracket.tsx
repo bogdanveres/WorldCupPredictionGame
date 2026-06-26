@@ -69,18 +69,21 @@ interface SE {
   goalsFor: number; played: number; group: string
 }
 
-function computeStandings(matches: Match[]): { byGroup: Record<string, SE[]>; best3rd: SE[] } {
+function computeStandings(matches: Match[]): { byGroup: Record<string, SE[]>; best3rd: SE[]; completedGroups: Set<string> } {
   const byGroup: Record<string, SE[]> = {}
+  const completedGroups = new Set<string>()
   for (const group of GROUPS) {
+    const gms = matches.filter(m => m.round === 'GROUP' && m.group === group)
+    if (gms.length === 6 && gms.every(m => m.status === 'FINISHED')) completedGroups.add(group)
+
     const map = new Map<string, SE>()
-    matches
-      .filter(m => m.round === 'GROUP' && m.group === group && m.homeTeamId !== 'TBD')
+    gms
+      .filter(m => m.homeTeamId !== 'TBD')
       .forEach(m => {
         if (!map.has(m.homeTeamId)) map.set(m.homeTeamId, { teamId: m.homeTeamId, points: 0, goalDifference: 0, goalsFor: 0, played: 0, group })
         if (!map.has(m.awayTeamId)) map.set(m.awayTeamId, { teamId: m.awayTeamId, points: 0, goalDifference: 0, goalsFor: 0, played: 0, group })
       })
-    for (const m of matches) {
-      if (m.round !== 'GROUP' || m.group !== group) continue
+    for (const m of gms) {
       if ((m.status !== 'FINISHED' && m.status !== 'LIVE') || m.homeScore === null || m.awayScore === null) continue
       const h = map.get(m.homeTeamId), a = map.get(m.awayTeamId)
       if (!h || !a) continue
@@ -98,7 +101,7 @@ function computeStandings(matches: Match[]): { byGroup: Record<string, SE[]>; be
   const best3rd = GROUPS.map(g => byGroup[g]?.[2])
     .filter((e): e is SE => !!e && e.played > 0)
     .sort((a, b) => b.points - a.points || b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor)
-  return { byGroup, best3rd }
+  return { byGroup, best3rd, completedGroups }
 }
 
 function resolveSlot(slot: string, byGroup: Record<string, SE[]>, best3rd: SE[]): SE | undefined {
@@ -110,9 +113,16 @@ function resolveSlot(slot: string, byGroup: Record<string, SE[]>, best3rd: SE[])
   const e = byGroup[g]?.[pos]; return e?.played > 0 ? e : undefined
 }
 
+// A slot is confirmed once its source group has finished all 6 matches.
+// 3rd-place slots remain projected until all 12 groups are done (selection not yet made).
+function isSlotConfirmed(slot: string, completedGroups: Set<string>): boolean {
+  if (slot.startsWith('3rd-')) return false
+  return completedGroups.has(slot[1])  // e.g. '1A' → 'A'
+}
+
 // ─── Shared types ──────────────────────────────────────────────────────────
 type TMap = Record<string, { flagEmoji: string; shortName: string }>
-type Proj = { homeSlot: string; awaySlot: string; home?: SE; away?: SE }
+type Proj = { homeSlot: string; awaySlot: string; home?: SE; away?: SE; homeConfirmed: boolean; awayConfirmed: boolean }
 type ProjMap = Record<string, Proj>
 
 // ─── Page ──────────────────────────────────────────────────────────────────
@@ -129,16 +139,23 @@ export default function Bracket() {
     for (const [mid, slots] of Object.entries(R32_SLOTS)) {
       const match = matchMap[mid]
       if (!match || (match.homeTeamId !== 'TBD' && match.awayTeamId !== 'TBD')) continue
+      const homeConfirmed = isSlotConfirmed(slots[0], standings.completedGroups)
+      const awayConfirmed = isSlotConfirmed(slots[1], standings.completedGroups)
       map[mid] = {
         homeSlot: slots[0], awaySlot: slots[1],
         home: match.homeTeamId === 'TBD' ? resolveSlot(slots[0], standings.byGroup, standings.best3rd) : undefined,
         away: match.awayTeamId === 'TBD' ? resolveSlot(slots[1], standings.byGroup, standings.best3rd) : undefined,
+        homeConfirmed,
+        awayConfirmed,
       }
     }
     return map
   }, [matchMap, standings])
 
-  const anyProj = Object.values(projected).some(p => p.home || p.away)
+  // Only count unconfirmed projections for the amber warning
+  const anyProj = Object.values(projected).some(p =>
+    (p.home && !p.homeConfirmed) || (p.away && !p.awayConfirmed)
+  )
 
   return (
     <div className="py-6 px-4">
@@ -162,7 +179,7 @@ export default function Bracket() {
 
       {anyProj && (
         <p className="text-xs text-amber-500/70 mb-3 max-w-5xl mx-auto">
-          ⚠ Teams in amber are projected from current group standings — confirmed after Jun 25–26
+          ⚠ Teams in amber are projected from current standings — not yet confirmed
         </p>
       )}
 
@@ -265,8 +282,8 @@ function TreeCard({ match, teamMap, proj }: { match: Match; teamMap: TMap; proj?
   const awayId = match.awayTeamId !== 'TBD' ? match.awayTeamId : proj?.away?.teamId
   const home = homeId ? teamMap[homeId] : undefined
   const away = awayId ? teamMap[awayId] : undefined
-  const hProj = match.homeTeamId === 'TBD' && !!proj?.home
-  const aProj = match.awayTeamId === 'TBD' && !!proj?.away
+  const hProj = match.homeTeamId === 'TBD' && !!proj?.home && !proj?.homeConfirmed
+  const aProj = match.awayTeamId === 'TBD' && !!proj?.away && !proj?.awayConfirmed
   const hWins = fin && !!homeId && match.winnerTeamId === homeId
   const aWins = fin && !!awayId && match.winnerTeamId === awayId
   const pen   = fin && match.homeScore !== null && match.awayScore !== null
@@ -411,8 +428,8 @@ function FullCard({ match, teamMap, proj }: { match: Match; teamMap: TMap; proj?
   const awayId = match.awayTeamId !== 'TBD' ? match.awayTeamId : proj?.away?.teamId
   const home = homeId ? teamMap[homeId] : undefined
   const away = awayId ? teamMap[awayId] : undefined
-  const hProj = match.homeTeamId === 'TBD' && !!proj?.home
-  const aProj = match.awayTeamId === 'TBD' && !!proj?.away
+  const hProj = match.homeTeamId === 'TBD' && !!proj?.home && !proj?.homeConfirmed
+  const aProj = match.awayTeamId === 'TBD' && !!proj?.away && !proj?.awayConfirmed
   const hWins = fin && !!homeId && match.winnerTeamId === homeId
   const aWins = fin && !!awayId && match.winnerTeamId === awayId
   const pen   = fin && match.homeScore !== null && match.awayScore !== null
