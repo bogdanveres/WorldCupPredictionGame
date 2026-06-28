@@ -119,7 +119,7 @@ for (const { id, pts: p } of pointRows) {
 }
 
 // Update leaderboard row (keep rank/displayName from current entry)
-const lbData = currentLbSnap.exists() ? currentLbSnap.data() : {}
+const lbData = currentLbSnap.exists ? currentLbSnap.data() : {}
 batch.set(db.collection('leaderboard').doc(uid), {
   ...lbData,
   uid,
