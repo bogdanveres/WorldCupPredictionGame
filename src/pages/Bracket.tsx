@@ -132,16 +132,28 @@ export default function Bracket() {
   const [view, setView] = useState<'tree' | 'rounds'>('tree')
   const [selectedRound, setSelectedRound] = useState<MatchRound | null>(null)
 
-  const matchMap = useMemo(() => Object.fromEntries(matches.map(m => [m.id, m])), [matches])
+  // Firestore-only view, used solely to read each match's live status/scores.
+  const fsMap = useMemo(() => Object.fromEntries(matches.map(m => [m.id, m])), [matches])
 
-  // Standings use local fixtures as base so stale Firestore SCHEDULED data can't
-  // wipe out known results. Only overlay Firestore data when a match is LIVE
-  // (to reflect live scores during an ongoing group-stage game).
-  const standingsMatches = useMemo(() => localMatches.map(local => {
-    const live = matchMap[local.id]
-    return live?.status === 'LIVE' ? { ...local, ...live } : local
-  }), [matchMap])
-  const standings = useMemo(() => computeStandings(standingsMatches), [standingsMatches])
+  // Local-first view of every match. fixtures.json is the source of truth for
+  // team assignments and completed results; we ONLY overlay Firestore data when
+  // a match is actually LIVE or FINISHED. Firestore's SCHEDULED knockout matches
+  // are often stale or half-resolved (e.g. GER vs TBD because the cron picked up
+  // one qualifier before the other), and trusting them would suppress our
+  // complete projection and flash a TBD over a team we can already derive.
+  const effectiveMatches = useMemo(() => localMatches.map(local => {
+    const fs = fsMap[local.id]
+    return fs && (fs.status === 'LIVE' || fs.status === 'FINISHED')
+      ? { ...local, ...fs }
+      : local
+  }), [fsMap])
+
+  const matchMap = useMemo(
+    () => Object.fromEntries(effectiveMatches.map(m => [m.id, m])),
+    [effectiveMatches],
+  )
+
+  const standings = useMemo(() => computeStandings(effectiveMatches), [effectiveMatches])
 
   const projected = useMemo<ProjMap>(() => {
     const map: ProjMap = {}
@@ -195,7 +207,7 @@ export default function Bracket() {
       {view === 'tree'
         ? <BracketTree matchMap={matchMap} teamMap={teamMap} projected={projected} />
         : <RoundsView
-            matches={matches} teamMap={teamMap} projected={projected}
+            matches={effectiveMatches} teamMap={teamMap} projected={projected}
             selectedRound={selectedRound} onSelectRound={setSelectedRound}
           />
       }
