@@ -42,13 +42,16 @@ const CHILDREN: Record<string, [string, string]> = {
 }
 
 // R32 group-position → bracket slot (adjacent-group pairing approximation)
+// Slots use 'NX' format: N=position (1/2/3), X=group letter.
+// e.g. '1A'=1st Group A, '2C'=2nd Group C, '3D'=3rd Group D.
+// R32 pairings match the official WC2026 bracket (derived from ESPN schedule).
 const R32_SLOTS: Record<string, [string, string]> = {
-  m073: ['1A','2B'], m074: ['1C','2D'], m075: ['1E','2F'],
-  m076: ['1G','2H'], m077: ['1I','2J'], m078: ['1K','2L'],
-  m079: ['1B','2A'], m080: ['1D','2C'], m081: ['1F','2E'],
-  m082: ['1H','2G'], m083: ['1J','2I'], m084: ['1L','2K'],
-  m085: ['3rd-1','3rd-2'], m086: ['3rd-3','3rd-4'],
-  m087: ['3rd-5','3rd-6'], m088: ['3rd-7','3rd-8'],
+  m073: ['2A','2B'], m074: ['1E','3D'], m075: ['1F','2C'],
+  m076: ['1C','2F'], m077: ['1I','3F'], m078: ['2E','2I'],
+  m079: ['1A','3E'], m080: ['1L','3K'], m081: ['1D','3B'],
+  m082: ['1G','3I'], m083: ['2K','2L'], m084: ['1H','2J'],
+  m085: ['1B','3J'], m086: ['1J','2H'], m087: ['1K','3L'],
+  m088: ['2D','2G'],
 }
 
 const COL_LABELS = ['Round of 32','Round of 16','Quarter-finals','Semi-finals','Final']
@@ -69,7 +72,7 @@ interface SE {
   goalsFor: number; played: number; group: string
 }
 
-function computeStandings(matches: Match[]): { byGroup: Record<string, SE[]>; best3rd: SE[]; completedGroups: Set<string> } {
+function computeStandings(matches: Match[]): { byGroup: Record<string, SE[]>; completedGroups: Set<string> } {
   const byGroup: Record<string, SE[]> = {}
   const completedGroups = new Set<string>()
   for (const group of GROUPS) {
@@ -98,26 +101,18 @@ function computeStandings(matches: Match[]): { byGroup: Record<string, SE[]>; be
       (a, b) => b.points - a.points || b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor,
     )
   }
-  const best3rd = GROUPS.map(g => byGroup[g]?.[2])
-    .filter((e): e is SE => !!e && e.played > 0)
-    .sort((a, b) => b.points - a.points || b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor)
-  return { byGroup, best3rd, completedGroups }
+  return { byGroup, completedGroups }
 }
 
-function resolveSlot(slot: string, byGroup: Record<string, SE[]>, best3rd: SE[]): SE | undefined {
-  if (slot.startsWith('3rd-')) {
-    const rank = parseInt(slot.slice(4)) - 1
-    const e = best3rd[rank]; return e?.played > 0 ? e : undefined
-  }
+// slot format: 'NX' where N=position (1/2/3) and X=group letter.
+function resolveSlot(slot: string, byGroup: Record<string, SE[]>): SE | undefined {
   const pos = parseInt(slot[0]) - 1, g = slot[1]
   const e = byGroup[g]?.[pos]; return e?.played > 0 ? e : undefined
 }
 
 // A slot is confirmed once its source group has finished all 6 matches.
-// 3rd-place slots remain projected until all 12 groups are done (selection not yet made).
 function isSlotConfirmed(slot: string, completedGroups: Set<string>): boolean {
-  if (slot.startsWith('3rd-')) return false
-  return completedGroups.has(slot[1])  // e.g. '1A' → 'A'
+  return completedGroups.has(slot[1])  // '1A'→'A', '3D'→'D'
 }
 
 // ─── Shared types ──────────────────────────────────────────────────────────
@@ -143,8 +138,8 @@ export default function Bracket() {
       const awayConfirmed = isSlotConfirmed(slots[1], standings.completedGroups)
       map[mid] = {
         homeSlot: slots[0], awaySlot: slots[1],
-        home: match.homeTeamId === 'TBD' ? resolveSlot(slots[0], standings.byGroup, standings.best3rd) : undefined,
-        away: match.awayTeamId === 'TBD' ? resolveSlot(slots[1], standings.byGroup, standings.best3rd) : undefined,
+        home: match.homeTeamId === 'TBD' ? resolveSlot(slots[0], standings.byGroup) : undefined,
+        away: match.awayTeamId === 'TBD' ? resolveSlot(slots[1], standings.byGroup) : undefined,
         homeConfirmed,
         awayConfirmed,
       }
