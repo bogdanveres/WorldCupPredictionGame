@@ -16,7 +16,7 @@ export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false)
 
   return (
-    <nav className="bg-slate-900 border-b border-slate-700 px-4 py-3">
+    <nav className="sticky top-0 z-50 bg-slate-900 border-b border-slate-700 px-4 py-3">
       <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
         <Link to="/" className="text-white font-bold text-lg tracking-tight shrink-0">
           ⚽ WC2026
