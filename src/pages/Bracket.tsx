@@ -1,6 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../contexts/DataContext'
 import type { Match, MatchRound } from '../types'
+import fixturesData from '../data/fixtures.json'
+
+// Local fixtures are always up-to-date for completed matches.
+// We use them as the base for standings so stale Firestore SCHEDULED data
+// can't corrupt group standings after the Firestore snapshot fires.
+const localMatches = fixturesData as Match[]
 
 // ─── Layout ────────────────────────────────────────────────────────────────
 const SLOT_H   = 76    // px per R32 slot
@@ -127,7 +133,15 @@ export default function Bracket() {
   const [selectedRound, setSelectedRound] = useState<MatchRound | null>(null)
 
   const matchMap = useMemo(() => Object.fromEntries(matches.map(m => [m.id, m])), [matches])
-  const standings = useMemo(() => computeStandings(matches), [matches])
+
+  // Standings use local fixtures as base so stale Firestore SCHEDULED data can't
+  // wipe out known results. Only overlay Firestore data when a match is LIVE
+  // (to reflect live scores during an ongoing group-stage game).
+  const standingsMatches = useMemo(() => localMatches.map(local => {
+    const live = matchMap[local.id]
+    return live?.status === 'LIVE' ? { ...local, ...live } : local
+  }), [matchMap])
+  const standings = useMemo(() => computeStandings(standingsMatches), [standingsMatches])
 
   const projected = useMemo<ProjMap>(() => {
     const map: ProjMap = {}
