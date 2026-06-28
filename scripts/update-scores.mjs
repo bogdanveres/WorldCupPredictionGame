@@ -215,14 +215,6 @@ for (const event of allEvents) {
   const newHome = parseScore(homeComp.score)
   const newAway = parseScore(awayComp.score)
 
-  const changed =
-    fsMatch.status    !== newStatus ||
-    fsMatch.homeScore !== newHome   ||
-    fsMatch.awayScore !== newAway   ||
-    teamChanged
-
-  if (!changed) continue
-
   // Use ESPN's winner flag — correctly handles AET and penalty shootouts
   let winnerId = null
   if (newStatus === 'FINISHED') {
@@ -233,6 +225,15 @@ for (const event of allEvents) {
       else if (newAway > newHome) winnerId = resolvedAwayId
     }
   }
+
+  const changed =
+    fsMatch.status       !== newStatus  ||
+    fsMatch.homeScore    !== newHome    ||
+    fsMatch.awayScore    !== newAway    ||
+    (fsMatch.winnerTeamId ?? null) !== winnerId ||
+    teamChanged
+
+  if (!changed) continue
 
   if (teamChanged) {
     console.log(`  ${fsMatch.id} team IDs resolved: ${resolvedHomeId} vs ${resolvedAwayId}`)

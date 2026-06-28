@@ -154,9 +154,19 @@ export default function Bracket() {
   )
 
   // Walk the bracket tree in order (children before parents) and propagate the
-  // winnerTeamId of a FINISHED match into the TBD team slot of the next round.
-  // This is what makes R16/QF/SF slots update automatically after each game.
+  // winner of a FINISHED match into the TBD team slot of the next round.
+  // Falls back to deriving winner from score when winnerTeamId is null
+  // (ESPN sometimes sets the winner flag a beat after the FINISHED status).
   const resolvedMatchMap = useMemo(() => {
+    const winner = (m?: Match): string | null => {
+      if (!m || m.status !== 'FINISHED') return null
+      if (m.winnerTeamId) return m.winnerTeamId
+      if (m.homeScore !== null && m.awayScore !== null && m.homeTeamId !== 'TBD' && m.awayTeamId !== 'TBD') {
+        if (m.homeScore > m.awayScore) return m.homeTeamId
+        if (m.awayScore > m.homeScore) return m.awayTeamId
+      }
+      return null
+    }
     const map: Record<string, Match> = { ...matchMap }
     const parentOrder = [
       'm089','m090','m091','m092','m093','m094','m095','m096',
@@ -168,10 +178,8 @@ export default function Bracket() {
       const parent = map[parentId]
       if (!parent) continue
       const [c1, c2] = childIds.map(id => map[id])
-      const h = parent.homeTeamId === 'TBD' && c1?.status === 'FINISHED' && c1?.winnerTeamId
-        ? c1.winnerTeamId : parent.homeTeamId
-      const a = parent.awayTeamId === 'TBD' && c2?.status === 'FINISHED' && c2?.winnerTeamId
-        ? c2.winnerTeamId : parent.awayTeamId
+      const h = parent.homeTeamId === 'TBD' ? (winner(c1) ?? 'TBD') : parent.homeTeamId
+      const a = parent.awayTeamId === 'TBD' ? (winner(c2) ?? 'TBD') : parent.awayTeamId
       if (h !== parent.homeTeamId || a !== parent.awayTeamId) {
         map[parentId] = { ...parent, homeTeamId: h, awayTeamId: a }
       }
