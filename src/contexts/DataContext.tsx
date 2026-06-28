@@ -51,7 +51,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const fsMap = Object.fromEntries(
             snap.docs.map(d => [d.id, d.data() as Match]),
           )
-          setMatches(localMatches.map(m => (fsMap[m.id] ? { ...m, ...fsMap[m.id] } : m)))
+          setMatches(localMatches.map(m => {
+            const fs = fsMap[m.id]
+            if (!fs) return m
+            // If local has a confirmed result but Firestore is still SCHEDULED
+            // (cron missed the window), trust local scores so the bracket stays accurate.
+            if (m.status === 'FINISHED' && fs.status === 'SCHEDULED') {
+              return { ...m, ...fs, status: 'FINISHED', homeScore: m.homeScore, awayScore: m.awayScore, winnerTeamId: m.winnerTeamId }
+            }
+            return { ...m, ...fs }
+          }))
         }
         setLoading(false)
       },

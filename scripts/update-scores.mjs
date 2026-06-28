@@ -86,11 +86,12 @@ console.log(`\n=== update-scores ${today} ===`)
 
 // ─── Pre-flight: load Firestore matches, find active or missed ones ────────
 // Active  = LIVE, or SCHEDULED within [-5min, +150min] of kickoff.
-// Missed  = SCHEDULED but kickoff was up to 24h ago (API was down / wrong provider).
+// Missed  = SCHEDULED but kickoff was up to 7 days ago (wide window so no match
+//           gets permanently stuck as SCHEDULED if the cron missed its window).
 // 150 min covers 90 min + halftime + ET + penalties + buffer.
 const BEFORE_MS   = 5   * 60 * 1000        //  5 min before kickoff
 const AFTER_MS    = 150 * 60 * 1000        // 150 min after kickoff
-const CATCH_UP_MS = 24  * 60 * 60 * 1000  //  24 h catch-up for missed windows
+const CATCH_UP_MS = 7   * 24 * 60 * 60 * 1000  //  7 day catch-up for missed windows
 
 const [matchSnap, teamSnap] = await Promise.all([
   db.collection('matches').get(),
