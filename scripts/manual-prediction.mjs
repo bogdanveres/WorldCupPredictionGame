@@ -49,7 +49,7 @@ const now      = new Date().toISOString()
 
 const pts = calcPoints({ predictedHomeScore: PREDICTED_HOME, predictedAwayScore: PREDICTED_AWAY }, match)
 
-if (existing.exists()) {
+if (existing.exists) {
   await predRef.set({
     predictedHomeScore: PREDICTED_HOME,
     predictedAwayScore: PREDICTED_AWAY,
