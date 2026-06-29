@@ -1,6 +1,6 @@
-// One-shot resync: re-fetches all group stage matches from ESPN using team-pair
-// matching (from fixtures.json as source of truth) and force-writes correct data
-// to Firestore. Also recalculates the leaderboard.
+// Full-tournament resync: re-fetches all matches (group stage + KO rounds) from ESPN
+// and force-writes correct data to Firestore. Always recalculates the leaderboard,
+// even when no match data changes are needed.
 // Run via: node scripts/resync-scores.mjs
 // Or trigger the "Resync Scores" GitHub Actions workflow.
 
@@ -62,22 +62,42 @@ function calcPoints(pred, match) {
   return 0
 }
 
-// Build team-pair map from fixtures.json (canonical team assignments — not Firestore,
-// which may have been corrupted by the kickoff-collision bug)
+// Build team-pair map from GROUP fixtures in fixtures.json (canonical — immune to kickoff
+// collision bugs). KO fixtures start as TBD so we look those up by kickoff time in Firestore.
 const groupFixtures = fixtures.filter(m => m.round === 'GROUP')
 const byTeamPair = Object.fromEntries(
   groupFixtures.map(m => [`${m.homeTeamId}:${m.awayTeamId}`, m])
 )
 
-// Fetch all group stage dates from ESPN
-const GROUP_DATES = [
+// Load Firestore matches: needed for KO match lookup by kickoff time (teams start as TBD)
+const matchSnap = await db.collection('matches').get()
+const fsMatchList = matchSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+const byKickoff = Object.fromEntries(
+  fsMatchList
+    .filter(m => m.scheduledKickoffUtc)
+    .map(m => [m.scheduledKickoffUtc.slice(0, 16), m])
+)
+
+// Fetch all tournament dates from ESPN (group stage + all KO rounds)
+const ALL_DATES = [
+  // Group stage: June 11–28
   '20260611', '20260612', '20260613', '20260614', '20260615', '20260616',
   '20260617', '20260618', '20260619', '20260620', '20260621', '20260622',
   '20260623', '20260624', '20260625', '20260626', '20260627', '20260628',
+  // Round of 32: June 29 – July 5
+  '20260629', '20260630', '20260701', '20260702', '20260703', '20260704', '20260705',
+  // Round of 16: July 9–12
+  '20260709', '20260710', '20260711', '20260712',
+  // Quarter-finals: July 15–16
+  '20260715', '20260716',
+  // Semi-finals: July 19, 22
+  '20260719', '20260722',
+  // Final: July 26
+  '20260726',
 ]
 
 const allEvents = []
-for (const date of GROUP_DATES) {
+for (const date of ALL_DATES) {
   const res = await fetch(
     `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${date}`,
     { headers: { 'User-Agent': 'Mozilla/5.0' } }
@@ -100,8 +120,12 @@ for (const event of allEvents) {
 
   const hId = espnToId(homeComp.team.abbreviation)
   const aId = espnToId(awayComp.team.abbreviation)
-  const fixture = byTeamPair[`${hId}:${aId}`]
-  if (!fixture) { console.log(`  ⚠ unmatched: ${hId} vs ${aId}`); continue }
+
+  // Primary: team pair (GROUP matches from fixtures.json — reliable)
+  // Fallback: kickoff time (KO matches where fixture.json has TBD slots)
+  const kickoffKey = event.date?.slice(0, 16)
+  const fixture = byTeamPair[`${hId}:${aId}`] ?? byKickoff[kickoffKey]
+  if (!fixture) { console.log(`  ⚠ unmatched: ${hId} vs ${aId} @ ${kickoffKey}`); continue }
   if (seen.has(fixture.id)) continue  // deduplicate (ESPN may return same match on adjacent dates)
   seen.add(fixture.id)
 
@@ -113,21 +137,26 @@ for (const event of allEvents) {
   const newHome = parseScore(homeComp.score)
   const newAway = parseScore(awayComp.score)
 
+  // For KO matches: resolve TBD slots using ESPN's confirmed team IDs
+  const resolvedHomeId = (fixture.homeTeamId === 'TBD' && hId !== 'TBD') ? hId : fixture.homeTeamId
+  const resolvedAwayId = (fixture.awayTeamId === 'TBD' && aId !== 'TBD') ? aId : fixture.awayTeamId
+
   let winnerId = null
   if (newStatus === 'FINISHED') {
-    if (homeComp.winner === true)       winnerId = hId
-    else if (awayComp.winner === true)  winnerId = aId
+    if (homeComp.winner === true)       winnerId = resolvedHomeId
+    else if (awayComp.winner === true)  winnerId = resolvedAwayId
     else if (newHome != null && newAway != null) {
-      if (newHome > newAway)      winnerId = hId
-      else if (newAway > newHome) winnerId = aId
+      if (newHome > newAway)      winnerId = resolvedHomeId
+      else if (newAway > newHome) winnerId = resolvedAwayId
     }
   }
 
-  console.log(`  ${fixture.id} ${hId} ${newHome ?? '?'}-${newAway ?? '?'} ${aId} [${newStatus}]${winnerId ? ` winner=${winnerId}` : ''}`)
+  const round = fixture.round ?? 'UNKNOWN'
+  console.log(`  ${fixture.id} [${round}] ${resolvedHomeId} ${newHome ?? '?'}-${newAway ?? '?'} ${resolvedAwayId} [${newStatus}]${winnerId ? ` winner=${winnerId}` : ''}`)
   updates.push({
     id: fixture.id,
-    homeTeamId: hId,
-    awayTeamId: aId,
+    homeTeamId: resolvedHomeId,
+    awayTeamId: resolvedAwayId,
     status: newStatus,
     homeScore: newHome,
     awayScore: newAway,
@@ -137,19 +166,18 @@ for (const event of allEvents) {
 }
 
 if (updates.length === 0) {
-  console.log('No completed matches found.')
-  process.exit(0)
-}
-
-// Write match corrections in batches
-for (let i = 0; i < updates.length; i += 400) {
-  const batch = db.batch()
-  for (const { id, ...fields } of updates.slice(i, i + 400)) {
-    batch.update(db.collection('matches').doc(id), fields)
+  console.log('No match updates needed — proceeding to leaderboard recalculation.')
+} else {
+  // Write match corrections in batches
+  for (let i = 0; i < updates.length; i += 400) {
+    const batch = db.batch()
+    for (const { id, ...fields } of updates.slice(i, i + 400)) {
+      batch.update(db.collection('matches').doc(id), fields)
+    }
+    await batch.commit()
   }
-  await batch.commit()
+  console.log(`Wrote ${updates.length} match corrections.`)
 }
-console.log(`Wrote ${updates.length} match corrections.`)
 
 // ─── Recalculate leaderboard ───────────────────────────────────────────────
 console.log('Recalculating leaderboard...')
