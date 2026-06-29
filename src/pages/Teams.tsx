@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useData } from '../contexts/DataContext'
-import type { Match } from '../types'
+import type { Match, MatchRound } from '../types'
 
 const GROUPS = ['A','B','C','D','E','F','G','H','I','J','K','L'] as const
 const CONFS  = ['ALL','UEFA','CONMEBOL','CONCACAF','CAF','AFC','OFC'] as const
@@ -22,6 +22,45 @@ interface TeamStat {
   goalsAgainst: number
   goalDifference: number
   points: number
+}
+
+const KO_ROUNDS: MatchRound[] = ['ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINAL', 'SEMI_FINAL', 'FINAL']
+const ROUND_RANK: Partial<Record<MatchRound, number>> = {
+  ROUND_OF_32: 1, ROUND_OF_16: 2, QUARTER_FINAL: 3, SEMI_FINAL: 4, FINAL: 5,
+}
+const ROUND_LABEL: Partial<Record<MatchRound, string>> = {
+  ROUND_OF_32: 'R32', ROUND_OF_16: 'R16', QUARTER_FINAL: 'QF', SEMI_FINAL: 'SF', FINAL: 'Final',
+}
+
+interface KoStatus {
+  eliminated: boolean
+  round: MatchRound
+  isChampion: boolean
+}
+
+function computeKoStatus(matches: Match[]): Map<string, KoStatus> {
+  const map = new Map<string, KoStatus>()
+  const koFinished = matches
+    .filter(m => KO_ROUNDS.includes(m.round) && m.status === 'FINISHED')
+    .sort((a, b) => (ROUND_RANK[a.round] ?? 0) - (ROUND_RANK[b.round] ?? 0))
+
+  for (const m of koFinished) {
+    // Derive winner: prefer winnerTeamId, fall back to score
+    let winner = m.winnerTeamId
+    if (!winner && m.homeScore !== null && m.awayScore !== null) {
+      if (m.homeScore > m.awayScore) winner = m.homeTeamId
+      else if (m.awayScore > m.homeScore) winner = m.awayTeamId
+    }
+    if (!winner || winner === 'TBD') continue
+
+    const loser = winner === m.homeTeamId ? m.awayTeamId : m.homeTeamId
+    if (loser === 'TBD') continue
+
+    const isChampion = m.round === 'FINAL'
+    map.set(winner, { eliminated: false, round: m.round, isChampion })
+    if (!map.has(loser)) map.set(loser, { eliminated: true, round: m.round, isChampion: false })
+  }
+  return map
 }
 
 function computeAllStats(matches: Match[]): TeamStat[] {
@@ -95,6 +134,7 @@ export default function Teams() {
   const [sortDir, setSortDir]   = useState<SortDir>('desc')
 
   const allStats   = useMemo(() => computeAllStats(matches), [matches])
+  const koStatusMap = useMemo(() => computeKoStatus(matches), [matches])
   const best3rdSet = useMemo(() => {
     const thirds = allStats
       .filter(s => s.groupRank === 3 && s.played > 0)
@@ -152,8 +192,9 @@ export default function Teams() {
 
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mb-3">
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />Top 2 in group (advancing)</span>
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />Best 3rd place (may advance)</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-400 shrink-0" />Champion</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />Still advancing</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />Best 3rd (may advance)</span>
         <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-600/70 shrink-0" />Eliminated</span>
         <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" />Playing now</span>
       </div>
@@ -165,7 +206,7 @@ export default function Teams() {
             <tr className="bg-slate-700/70 text-slate-400 border-b border-slate-600">
               <th className="text-center px-2 py-2 w-8 font-normal">#</th>
               <th className="text-left px-3 py-2 font-normal">Team</th>
-              <th className="text-center px-2 py-2 font-normal text-slate-500 w-10" title="Group position">Pos</th>
+              <th className="text-center px-2 py-2 font-normal text-slate-500 w-10" title="Current stage / Group position">Stage</th>
               {COLS.map(col => (
                 <th
                   key={col.key}
@@ -186,18 +227,45 @@ export default function Teams() {
           <tbody>
             {rows.map((s, i) => {
               const team = teamMap[s.teamId]
-              const advancing  = s.groupRank <= 2 && s.played > 0
-              const maybeBest3 = s.groupRank === 3 && best3rdSet.has(s.teamId)
-              const eliminated = s.groupComplete && s.groupRank === 4
+              const ko = koStatusMap.get(s.teamId)
+
+              // KO status takes precedence over group stage status
+              const koEliminated  = ko?.eliminated === true
+              const koAdvancing   = ko !== undefined && !ko.eliminated
+              const groupAdvancing  = s.groupRank <= 2 && s.played > 0
+              const maybeBest3    = s.groupRank === 3 && best3rdSet.has(s.teamId)
+              const groupEliminated = s.groupComplete && s.groupRank === 4
+
+              const isEliminated = koEliminated || groupEliminated
+              const isAdvancing  = koAdvancing || (!koEliminated && groupAdvancing)
 
               const dotColor = s.isLive
                 ? 'bg-green-400 animate-pulse'
-                : eliminated    ? 'bg-red-600/70'
-                : advancing     ? 'bg-green-500'
-                : maybeBest3    ? 'bg-amber-500'
-                :                  'bg-slate-600'
+                : ko?.isChampion   ? 'bg-yellow-400'
+                : isEliminated     ? 'bg-red-600/70'
+                : isAdvancing      ? 'bg-green-500'
+                : maybeBest3       ? 'bg-amber-500'
+                :                    'bg-slate-600'
 
-              const rowBg = s.isLive ? 'bg-green-900/15' : advancing ? 'bg-green-900/5' : ''
+              const rowBg = s.isLive ? 'bg-green-900/15' : isAdvancing && !isEliminated ? 'bg-green-900/5' : ''
+
+              // Stage label: show KO round reached (or group position if not yet in KO)
+              const stageLabel = ko?.isChampion
+                ? '🏆'
+                : ko
+                  ? ROUND_LABEL[ko.round] ?? ko.round
+                  : `${s.group}${s.groupRank}`
+
+              const stageColor = ko?.isChampion
+                ? 'text-yellow-400'
+                : ko?.eliminated
+                  ? 'text-red-400/70'
+                  : ko
+                    ? 'text-green-400'
+                    : groupAdvancing ? 'text-green-400'
+                    : maybeBest3     ? 'text-amber-400'
+                    : groupEliminated ? 'text-red-400/70'
+                    : 'text-slate-500'
 
               return (
                 <tr key={s.teamId} className={`border-b border-slate-700/40 hover:bg-slate-700/20 transition-colors ${rowBg}`}>
@@ -215,15 +283,13 @@ export default function Teams() {
                     </div>
                   </td>
 
-                  {/* Group + position */}
-                  <td className="text-center px-2 py-2 text-slate-400 font-mono text-[11px]">
+                  {/* Stage / Group position */}
+                  <td className="text-center px-2 py-2 font-mono text-[11px]">
                     <span
-                      title={`Group ${s.group} — ${s.groupRank}${['st','nd','rd','th'][Math.min(s.groupRank-1,3)]} place`}
-                      className={`inline-block px-1 rounded ${
-                        advancing ? 'text-green-400' : maybeBest3 ? 'text-amber-400' : eliminated ? 'text-red-400/70' : 'text-slate-500'
-                      }`}
+                      title={ko ? `${ko.eliminated ? 'Eliminated in' : 'Advanced past'} ${ROUND_LABEL[ko.round] ?? ko.round}` : `Group ${s.group} — position ${s.groupRank}`}
+                      className={`inline-block px-1 rounded ${stageColor}`}
                     >
-                      {s.group}{s.groupRank}
+                      {stageLabel}
                     </span>
                   </td>
 
