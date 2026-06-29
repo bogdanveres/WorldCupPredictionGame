@@ -10,6 +10,7 @@ import { db } from '../services/firebase'
 import type { Match, Team, MatchFilter } from '../types'
 import teamsData from '../data/teams.json'
 import fixturesData from '../data/fixtures.json'
+import { resolveConfirmedKnockout } from '../utils/bracketResolve'
 
 const localTeams = teamsData as Team[]
 const localMatches = fixturesData as Match[]
@@ -40,7 +41,7 @@ function applyFilters(matches: Match[], filters?: MatchFilter): Match[] {
 }
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [matches, setMatches] = useState<Match[]>(localMatches)
+  const [matches, setMatches] = useState<Match[]>(() => resolveConfirmedKnockout(localMatches))
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -51,7 +52,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const fsMap = Object.fromEntries(
             snap.docs.map(d => [d.id, d.data() as Match]),
           )
-          setMatches(localMatches.map(m => {
+          const merged: Match[] = localMatches.map(m => {
             const fs = fsMap[m.id]
             if (!fs) return m
             // If local has a confirmed result but Firestore is still SCHEDULED
@@ -60,7 +61,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
               return { ...m, ...fs, status: 'FINISHED', homeScore: m.homeScore, awayScore: m.awayScore, winnerTeamId: m.winnerTeamId }
             }
             return { ...m, ...fs }
-          }))
+          })
+          // Resolve TBD knockout slots from confirmed group standings + finished
+          // feeder-match winners, so every page (Fixtures, My Picks, …) shows the
+          // real opponent instead of TBD once it is mathematically locked in.
+          setMatches(resolveConfirmedKnockout(merged))
         }
         setLoading(false)
       },

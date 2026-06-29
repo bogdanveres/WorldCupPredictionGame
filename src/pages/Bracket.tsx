@@ -2,6 +2,11 @@ import { useMemo, useState } from 'react'
 import { useData } from '../contexts/DataContext'
 import type { Match, MatchRound } from '../types'
 import fixturesData from '../data/fixtures.json'
+import {
+  R32_SLOTS, CHILDREN, PARENT_ORDER,
+  computeStandings, resolveSlot, isSlotConfirmed, winnerOf,
+  type SE,
+} from '../utils/bracketResolve'
 
 // Local fixtures are always up-to-date for completed matches.
 // We use them as the base for standings so stale Firestore SCHEDULED data
@@ -16,8 +21,6 @@ const COL_GAP  = 30    // px gap between columns (connector lines live here)
 const COL_STEP = COL_W + COL_GAP
 const TOTAL_H  = 16 * SLOT_H            // 1216px
 const TOTAL_W  = 5 * COL_STEP - COL_GAP // 1118px
-
-const GROUPS = ['A','B','C','D','E','F','G','H','I','J','K','L'] as const
 
 // ─── Bracket structure ─────────────────────────────────────────────────────
 const R32_ORDER = [
@@ -40,26 +43,6 @@ const BP: Record<string, BPos> = {
   m104: { topSlot: 0,  spanSlots: 16, colIndex: 4 },
 }
 
-const CHILDREN: Record<string, [string, string]> = {
-  m089: ['m073','m074'], m090: ['m075','m076'], m091: ['m077','m078'], m092: ['m079','m080'],
-  m093: ['m081','m082'], m094: ['m083','m084'], m095: ['m085','m086'], m096: ['m087','m088'],
-  m097: ['m089','m090'], m098: ['m091','m092'], m099: ['m093','m094'], m100: ['m095','m096'],
-  m101: ['m097','m098'], m102: ['m099','m100'], m104: ['m101','m102'],
-}
-
-// R32 group-position → bracket slot (adjacent-group pairing approximation)
-// Slots use 'NX' format: N=position (1/2/3), X=group letter.
-// e.g. '1A'=1st Group A, '2C'=2nd Group C, '3D'=3rd Group D.
-// R32 pairings match the official WC2026 bracket (derived from ESPN schedule).
-const R32_SLOTS: Record<string, [string, string]> = {
-  m073: ['2A','2B'], m074: ['1E','3D'], m075: ['1F','2C'],
-  m076: ['1C','2F'], m077: ['1I','3F'], m078: ['2E','2I'],
-  m079: ['1A','3E'], m080: ['1L','3K'], m081: ['1D','3B'],
-  m082: ['1G','3I'], m083: ['2K','2L'], m084: ['1H','2J'],
-  m085: ['1B','3J'], m086: ['1J','2H'], m087: ['1K','3L'],
-  m088: ['2D','2G'],
-}
-
 const COL_LABELS = ['Round of 32','Round of 16','Quarter-finals','Semi-finals','Final']
 
 // ─── Round config (for tab view) ───────────────────────────────────────────
@@ -71,55 +54,6 @@ const ROUND_CONFIG: { round: MatchRound; label: string; short: string }[] = [
   { round: 'THIRD_PLACE',   label: '3rd Place',      short: '3rd'   },
   { round: 'FINAL',         label: 'Final',          short: 'Final' },
 ]
-
-// ─── Standings (project R32 slots from group stage) ─────────────────────────
-interface SE {
-  teamId: string; points: number; goalDifference: number
-  goalsFor: number; played: number; group: string
-}
-
-function computeStandings(matches: Match[]): { byGroup: Record<string, SE[]>; completedGroups: Set<string> } {
-  const byGroup: Record<string, SE[]> = {}
-  const completedGroups = new Set<string>()
-  for (const group of GROUPS) {
-    const gms = matches.filter(m => m.round === 'GROUP' && m.group === group)
-    if (gms.length === 6 && gms.every(m => m.status === 'FINISHED')) completedGroups.add(group)
-
-    const map = new Map<string, SE>()
-    gms
-      .filter(m => m.homeTeamId !== 'TBD')
-      .forEach(m => {
-        if (!map.has(m.homeTeamId)) map.set(m.homeTeamId, { teamId: m.homeTeamId, points: 0, goalDifference: 0, goalsFor: 0, played: 0, group })
-        if (!map.has(m.awayTeamId)) map.set(m.awayTeamId, { teamId: m.awayTeamId, points: 0, goalDifference: 0, goalsFor: 0, played: 0, group })
-      })
-    for (const m of gms) {
-      if ((m.status !== 'FINISHED' && m.status !== 'LIVE') || m.homeScore === null || m.awayScore === null) continue
-      const h = map.get(m.homeTeamId), a = map.get(m.awayTeamId)
-      if (!h || !a) continue
-      h.played++; a.played++
-      h.goalsFor += m.homeScore; h.goalDifference += m.homeScore - m.awayScore
-      a.goalsFor += m.awayScore; a.goalDifference += m.awayScore - m.homeScore
-      if (m.homeScore > m.awayScore) h.points += 3
-      else if (m.awayScore > m.homeScore) a.points += 3
-      else { h.points++; a.points++ }
-    }
-    byGroup[group] = Array.from(map.values()).sort(
-      (a, b) => b.points - a.points || b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor,
-    )
-  }
-  return { byGroup, completedGroups }
-}
-
-// slot format: 'NX' where N=position (1/2/3) and X=group letter.
-function resolveSlot(slot: string, byGroup: Record<string, SE[]>): SE | undefined {
-  const pos = parseInt(slot[0]) - 1, g = slot[1]
-  const e = byGroup[g]?.[pos]; return e?.played > 0 ? e : undefined
-}
-
-// A slot is confirmed once its source group has finished all 6 matches.
-function isSlotConfirmed(slot: string, completedGroups: Set<string>): boolean {
-  return completedGroups.has(slot[1])  // '1A'→'A', '3D'→'D'
-}
 
 // ─── Shared types ──────────────────────────────────────────────────────────
 type TMap = Record<string, { flagEmoji: string; shortName: string }>
@@ -158,28 +92,15 @@ export default function Bracket() {
   // Falls back to deriving winner from score when winnerTeamId is null
   // (ESPN sometimes sets the winner flag a beat after the FINISHED status).
   const resolvedMatchMap = useMemo(() => {
-    const winner = (m?: Match): string | null => {
-      if (!m || m.status !== 'FINISHED') return null
-      if (m.winnerTeamId) return m.winnerTeamId
-      if (m.homeScore !== null && m.awayScore !== null && m.homeTeamId !== 'TBD' && m.awayTeamId !== 'TBD') {
-        if (m.homeScore > m.awayScore) return m.homeTeamId
-        if (m.awayScore > m.homeScore) return m.awayTeamId
-      }
-      return null
-    }
     const map: Record<string, Match> = { ...matchMap }
-    const parentOrder = [
-      'm089','m090','m091','m092','m093','m094','m095','m096',
-      'm097','m098','m099','m100','m101','m102','m104',
-    ]
-    for (const parentId of parentOrder) {
+    for (const parentId of PARENT_ORDER) {
       const childIds = CHILDREN[parentId]
       if (!childIds) continue
       const parent = map[parentId]
       if (!parent) continue
       const [c1, c2] = childIds.map(id => map[id])
-      const h = parent.homeTeamId === 'TBD' ? (winner(c1) ?? 'TBD') : parent.homeTeamId
-      const a = parent.awayTeamId === 'TBD' ? (winner(c2) ?? 'TBD') : parent.awayTeamId
+      const h = parent.homeTeamId === 'TBD' ? (winnerOf(c1) ?? 'TBD') : parent.homeTeamId
+      const a = parent.awayTeamId === 'TBD' ? (winnerOf(c2) ?? 'TBD') : parent.awayTeamId
       if (h !== parent.homeTeamId || a !== parent.awayTeamId) {
         map[parentId] = { ...parent, homeTeamId: h, awayTeamId: a }
       }
