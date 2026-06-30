@@ -14,6 +14,9 @@ import { resolveConfirmedKnockout } from '../utils/bracketResolve'
 
 const localTeams = teamsData as Team[]
 const localMatches = fixturesData as Match[]
+// Whitelist of real team IDs — used to scrub placeholder IDs (e.g. "3RD") that
+// the score cron can persist for unconfirmed knockout slots.
+const validTeamIds = new Set(localTeams.map(t => t.id))
 
 interface DataContextValue {
   teams: Team[]
@@ -41,7 +44,7 @@ function applyFilters(matches: Match[], filters?: MatchFilter): Match[] {
 }
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [matches, setMatches] = useState<Match[]>(() => resolveConfirmedKnockout(localMatches))
+  const [matches, setMatches] = useState<Match[]>(() => resolveConfirmedKnockout(localMatches, validTeamIds))
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -65,7 +68,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           // Resolve TBD knockout slots from confirmed group standings + finished
           // feeder-match winners, so every page (Fixtures, My Picks, …) shows the
           // real opponent instead of TBD once it is mathematically locked in.
-          setMatches(resolveConfirmedKnockout(merged))
+          setMatches(resolveConfirmedKnockout(merged, validTeamIds))
         }
         setLoading(false)
       },

@@ -38,7 +38,15 @@ function espnToId(abbr) {
   if (!abbr) return 'TBD'
   const lower = abbr.toLowerCase()
   if (lower === 'tbd' || lower === '') return 'TBD'
-  return ESPN_TO_ID[lower] ?? abbr.toUpperCase()
+  if (ESPN_TO_ID[lower]) return ESPN_TO_ID[lower]
+  // Reject placeholder abbreviations for unconfirmed KO slots ("3RD", "1A", …).
+  if (!/^[a-z]+$/.test(lower)) return 'TBD'
+  return abbr.toUpperCase()
+}
+
+// A real team has a pure-alpha code. Rejects 'TBD' and placeholders like '3RD'.
+function isRealTeam(id) {
+  return !!id && id !== 'TBD' && /^[A-Z]+$/.test(id)
 }
 
 function mapEspnStatus(statusType) {
@@ -137,9 +145,12 @@ for (const event of allEvents) {
   const newHome = parseScore(homeComp.score)
   const newAway = parseScore(awayComp.score)
 
-  // For KO matches: resolve TBD slots using ESPN's confirmed team IDs
-  const resolvedHomeId = (fixture.homeTeamId === 'TBD' && hId !== 'TBD') ? hId : fixture.homeTeamId
-  const resolvedAwayId = (fixture.awayTeamId === 'TBD' && aId !== 'TBD') ? aId : fixture.awayTeamId
+  // For KO matches: adopt ESPN's team whenever our stored side isn't a real team
+  // (TBD or a stale placeholder like "3RD"); scrub to 'TBD' if ESPN can't confirm.
+  const cleanSide = (stored, espn) =>
+    isRealTeam(stored) ? stored : (isRealTeam(espn) ? espn : 'TBD')
+  const resolvedHomeId = cleanSide(fixture.homeTeamId, hId)
+  const resolvedAwayId = cleanSide(fixture.awayTeamId, aId)
 
   let winnerId = null
   if (newStatus === 'FINISHED') {

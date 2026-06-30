@@ -89,14 +89,31 @@ export function winnerOf(m?: Match): string | null {
   return null
 }
 
+// Normalize a match's team references against the set of real team IDs.
+// ESPN sometimes reports placeholder abbreviations for unconfirmed knockout
+// slots (e.g. "3RD" for a 3rd-place qualifier), and the cron can persist those
+// as team IDs. Such values aren't in teams.json, so they'd render as a broken
+// "TBD" and — because they aren't literally 'TBD' — suppress slot projection.
+// Coercing them back to 'TBD' / null lets the normal resolution take over.
+export function normalizeMatch(m: Match, validTeamIds: Set<string>): Match {
+  const home   = m.homeTeamId && validTeamIds.has(m.homeTeamId) ? m.homeTeamId : 'TBD'
+  const away   = m.awayTeamId && validTeamIds.has(m.awayTeamId) ? m.awayTeamId : 'TBD'
+  const winner = m.winnerTeamId && validTeamIds.has(m.winnerTeamId) ? m.winnerTeamId : null
+  if (home === m.homeTeamId && away === m.awayTeamId && winner === (m.winnerTeamId ?? null)) return m
+  return { ...m, homeTeamId: home, awayTeamId: away, winnerTeamId: winner }
+}
+
 // Resolve TBD knockout slots to **confirmed** teams only:
 //   • R32 slots filled from groups that have finished all 6 matches
 //   • R16 → Final slots filled from winners of FINISHED feeder matches
 // Projected-but-unconfirmed slots (group still in progress) are left as TBD,
 // so we never show a speculative team as if it were locked in.
-export function resolveConfirmedKnockout(matches: Match[]): Match[] {
-  const { byGroup, completedGroups } = computeStandings(matches)
-  const map: Record<string, Match> = Object.fromEntries(matches.map(m => [m.id, m]))
+// When validTeamIds is supplied, every match is first normalized so persisted
+// placeholder IDs (e.g. "3RD") don't block resolution.
+export function resolveConfirmedKnockout(matches: Match[], validTeamIds?: Set<string>): Match[] {
+  const cleaned = validTeamIds ? matches.map(m => normalizeMatch(m, validTeamIds)) : matches
+  const { byGroup, completedGroups } = computeStandings(cleaned)
+  const map: Record<string, Match> = Object.fromEntries(cleaned.map(m => [m.id, m]))
 
   // 1. R32: fill TBD slots from confirmed group standings
   for (const [mid, slots] of Object.entries(R32_SLOTS)) {
@@ -128,5 +145,5 @@ export function resolveConfirmedKnockout(matches: Match[]): Match[] {
     }
   }
 
-  return matches.map(m => map[m.id] ?? m)
+  return cleaned.map(m => map[m.id] ?? m)
 }

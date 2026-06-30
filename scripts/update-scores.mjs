@@ -49,11 +49,17 @@ function espnToId(abbr) {
   if (!abbr) return 'TBD'
   const lower = abbr.toLowerCase()
   if (lower === 'tbd' || lower === '') return 'TBD'
-  return ESPN_TO_ID[lower] ?? abbr.toUpperCase()
+  if (ESPN_TO_ID[lower]) return ESPN_TO_ID[lower]
+  // FIFA/ESPN use placeholder abbreviations for unconfirmed knockout slots
+  // (e.g. "3RD" 3rd-place qualifier, "1A" group winner, "W73" match winner).
+  // Real team codes are pure letters — treat anything else as not-yet-known.
+  if (!/^[a-z]+$/.test(lower)) return 'TBD'
+  return abbr.toUpperCase()
 }
 
+// A real team has a pure-alpha code. Rejects 'TBD' and placeholders like '3RD'.
 function isRealTeam(id) {
-  return id && id !== 'TBD'
+  return !!id && id !== 'TBD' && /^[A-Z]+$/.test(id)
 }
 
 // ─── Status mapping ────────────────────────────────────────────────────────
@@ -120,7 +126,9 @@ const activeMatches = fsMatches.filter(m => {
 const KO_LOOKAHEAD_MS = 3 * 24 * 60 * 60 * 1000
 const tbdKoMatches = fsMatches.filter(m => {
   if (m.status !== 'SCHEDULED' || m.round === 'GROUP' || !m.scheduledKickoffUtc) return false
-  if (m.homeTeamId !== 'TBD' && m.awayTeamId !== 'TBD') return false
+  // Re-scan whenever either side isn't a real team — covers literal TBD *and*
+  // stale placeholder IDs (e.g. "3RD") that still need correcting.
+  if (isRealTeam(m.homeTeamId) && isRealTeam(m.awayTeamId)) return false
   const kickoff = new Date(m.scheduledKickoffUtc).getTime()
   return kickoff > nowMs && kickoff <= nowMs + KO_LOOKAHEAD_MS
 })
@@ -199,9 +207,13 @@ for (const event of allEvents) {
   const statusType = comp.status?.type
   const newStatus  = mapEspnStatus(statusType)
 
-  // Resolve team IDs: use ESPN's value when our record still has TBD
-  const resolvedHomeId = (fsMatch.homeTeamId === 'TBD' && isRealTeam(hId)) ? hId : fsMatch.homeTeamId
-  const resolvedAwayId = (fsMatch.awayTeamId === 'TBD' && isRealTeam(aId)) ? aId : fsMatch.awayTeamId
+  // Resolve team IDs: adopt ESPN's value whenever our stored side isn't a real
+  // team (TBD *or* a stale placeholder like "3RD"); if ESPN can't confirm it yet
+  // either, scrub the stored garbage back to 'TBD' so it stays self-correcting.
+  const cleanSide = (stored, espn) =>
+    isRealTeam(stored) ? stored : (isRealTeam(espn) ? espn : 'TBD')
+  const resolvedHomeId = cleanSide(fsMatch.homeTeamId, hId)
+  const resolvedAwayId = cleanSide(fsMatch.awayTeamId, aId)
   const teamChanged =
     resolvedHomeId !== fsMatch.homeTeamId ||
     resolvedAwayId !== fsMatch.awayTeamId
